@@ -1,29 +1,33 @@
 # Validation and limits
 
-## Current repository candidate — 23 October 2026
+## Plugin candidate — 23 October 2026
 
-The companion now offers explicit OpenSSH or Tailscale SSH transport. New examples select OpenSSH. Existing configurations without a transport field retain the tested Tailscale behavior. No automatic transport fallback is implemented.
+The native Omarchy plugin, receiver-first pairing wizard and independent clipboard service were installed and tested on two authorized computers. Both Direct LAN (OpenSSH) and Tailscale SSH pairing completed through the panel's own QML handlers. Installation, update, disable/enable, shell restart and receiver widget removal/reinstallation were exercised through native Omarchy commands. Manifest validation passes on both computers.
 
-The companion's 16 isolated checks pass on each of the two test computers, including SSH command construction, strict host checking, remote path quoting, legacy configuration compatibility and invalid transports. Protocol version 3, clipboard handling and Synergy gating are unchanged from the accepted baseline. Installation paths remain at their original stable user-local locations.
+The 38 isolated companion/plugin tests pass on both computers. They cover transport construction and strict checking, bounded input, configuration validation, transaction restoration, endpoint identity/version checks, source-role refusal, job lifetime/locking, pause/status records, pair-limit acknowledgment and dynamic clipboard capture bounds. Native integration checks use the same QML actions as the buttons; they are not a claim of automated physical mouse clicks.
 
-The owner authorized moving the running pair to direct LAN SSH. Both installed scripts now match this candidate; the coordinator uses its existing pinned LAN alias and a live OpenSSH child. Previous scripts/configuration and a hash-guarded rollback command remain private. This migration changes only clipboard code/configuration; input bridge, Synergy layout/account settings and SSH trust are retained.
+## Live transfer and lifecycle checks
 
-Live LAN acceptance: exact Unicode/multiline text and PNG transfer in both directions; independent PRIMARY in both directions without changing the regular clipboard; no regular/PRIMARY transfer while the receiving Synergy service is disconnected; fresh transfer after resume; coordinator restart and reverse PRIMARY recovery. Prior supported selections were held only in memory and restored before resuming source-authoritative sharing. Existing clipboard data was not logged or saved.
+For each transport, UTF-8 text of 9,437,205 bytes and a valid PNG of 16,784,432 bytes matched exactly in both directions. Independent PRIMARY transfer passed both ways without changing the regular clipboard. Prior supported selections were held only in memory and restored; clipboard contents were not logged or saved.
 
-The three included bridge patches reproduce the accepted bridge tree at local commit 5ce1b22 from pinned upstream ea55f66c8238235983d60d381bf2abe1fed50043. Their upstream license is preserved. This packaging/transport change does not modify the bridge source, so its build result remains the prior two-machine acceptance described below.
+Receiver pause persisted through endpoint reconnect and blocked outgoing regular clipboard and incoming PRIMARY changes. Source pause persisted through service restart. Resume recovered transfer. Stopping/restarting the receiving Synergy service gated sharing and allowed a fresh transfer after recovery. Both shell restarts retained the coordinator connection. Disabling/enabling and removing/reinstalling the receiver widget retained the independent service.
 
-## Original hardware acceptance
+Pair-wide limits synchronized from the source at 128 MiB, from the receiver at 32 MiB, and back to 128 MiB. With the source paused/offline, a receiver request remained pending and synchronized on reconnect. The owner confirmed that changing the size through the panels updates the other computer. This validates settings up to 128 MiB, not a full 128 MiB payload transfer.
 
-See [the baseline report](ACCEPTANCE.md) for the earlier Tailscale run, source hash and input tests. Both computers passed six bridge checks and 13 original isolated companion checks, plus real text/PNG, independent PRIMARY, source seeding, Synergy pause and coordinator/endpoint reconnect. The owner confirmed both receiving monitors, typing, scrolling, return crossing, middle-click paste and the Shift/Codex correction, including normal digits/Enter after releasing Shift and working Shift+Enter.
+Acceptance found and corrected a frozen 8 MiB clipboard-capture default, a native Omarchy button API mismatch and clicks dropped during status polling. Background polling subsequently received a visual fix to avoid dimming controls/showing a busy spinner on every refresh. Idle geometry remained constant during sampling on both computers, and the owner confirmed both panels stay steady after the fix.
 
-The original stuck-modifier regression fails without duplicate-transition filtering and passes with it. The accepted input bridge remains running; no new physical input acceptance is claimed for this clipboard-only change.
+The final working pair uses Direct LAN SSH with existing pinned trust. The Synergy input bridge, layout, account settings, SSH trust and router configuration were retained. Public authorship and publication remain pending review; no upstream submission has been made.
+
+## Input bridge and historical acceptance
+
+The three included patches reproduce accepted bridge tree 5ce1b22 from pinned upstream ea55f66c8238235983d60d381bf2abe1fed50043. Bridge code was unchanged during plugin development. See [the original report](ACCEPTANCE.md) for prior bridge tests and hardware acceptance.
+
+The owner previously confirmed both receiving monitors, typing, scrolling, return crossing, middle-click paste and the Shift/Codex correction: normal digits/Enter after releasing Shift and working Shift+Enter. The stuck-modifier regression fails without duplicate-transition filtering and passes with it. This plugin test does not claim a new full physical-input acceptance run.
 
 ## Practical limits
 
-Tested with Synergy 3.8.4, Omarchy 4.0.6, Hyprland 0.56.2, Python 3.14 and wl-clipboard 2.3. Receiver: two adjacent 1920×1080 monitors at scale 1. Python 3.11+ is the intended minimum, but older Python releases have not been exercised here.
+Tested with Synergy 3.8.4, Omarchy 4.0.6, Hyprland 0.56.2, Python 3.14 and wl-clipboard 2.3. The receiver has two adjacent 1920×1080 monitors at scale 1. Python 3.11+ is the intended minimum; older Python releases were not exercised here.
 
-Not validated: reboot persistence, long soak, fractional/mixed scaling, rotation/hotplug, full physical AltGr/Super/keyboard-layout coverage or additional distributions. Restart the input bridge after geometry changes. The optional caller-verification override reduces filesystem isolation and remains a maintainer-review point.
+Not validated: full 128 MiB payloads, reboot persistence, long soak, fractional/mixed scaling, rotation/hotplug, full physical AltGr/Super/keyboard-layout coverage or additional distributions. Restart the input bridge after geometry changes. The optional caller-verification override reduces filesystem isolation and remains a maintainer-review point.
 
-The plugin and pairing wizard are a design only: no plugin manifest, QML implementation or plugin acceptance is included. See [the design](PLUGIN-DESIGN.md). Public commit authorship and publication remain pending review.
-
-Raw logs, private network addresses, actual peer configuration, deployment/rollback helpers, keys and backups are excluded from this repository. The Synergy layout report and two bridge PR drafts are separately prepared for review; no upstream submission has been made.
+The companion supports text and PNG/JPEG/WebP/BMP, including middle-click PRIMARY. File-manager transfers, folders, rich text, history and selection clearing are not implemented. Raw logs, actual configuration, network addresses, deployment/rollback helpers, keys and backups remain outside the public repository.

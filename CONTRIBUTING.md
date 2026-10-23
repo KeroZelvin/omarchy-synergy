@@ -15,4 +15,4 @@ Keep input-bridge fixes scoped for the existing upstream project. The included s
 
 Public reports should include software versions, reproducible steps and sanitized diagnostics. Do not include full Synergy settings/diagnostic archives, personal config, peer IDs, license data, SSH keys or clipboard payloads. Describe the transport and test environment without publishing private addresses.
 
-The proposed plugin needs implementation and lifecycle/pairing acceptance before being listed as supported; see [the design](docs/PLUGIN-DESIGN.md).
+For plugin changes, also run `omarchy plugin validate .` on the target Omarchy version and exercise the receiver-first wizard on two consenting sessions. Check background polling versus foreground requests, detached setup jobs, confirmation rechecks, pause persistence, both transports, limit acknowledgment, and widget update/removal without interrupting the independent service. See [architecture](docs/PLUGIN-DESIGN.md) and [actual validation](docs/VALIDATION.md). Keep experimental status until broader hardware/reboot testing is complete.

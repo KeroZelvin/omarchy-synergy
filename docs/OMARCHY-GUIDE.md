@@ -88,7 +88,7 @@ Test edge crossing, clicks, typing, modifier keys, scrolling, every receiving mo
 
 ## 5. Add optional clipboard sharing
 
-Follow [the companion setup](clipboard.md). It requires Python 3.11+, wl-clipboard, and a working trusted OpenSSH or Tailscale SSH route between the two active Wayland sessions. Install the same companion version on both computers, configure the remote host, remote script path and Synergy peer ID only on the input source, and test it in the foreground before enabling its user service.
+Use [the plugin wizard](PLUGIN.md) or follow [the manual companion setup](clipboard.md). It requires Python 3.11+, wl-clipboard, and a working trusted OpenSSH or Tailscale SSH route between the two active Wayland sessions. Install the same companion version on both computers, configure the remote host, remote script path and Synergy peer ID only on the input source, and test it in the foreground before enabling its user service.
 
 The regular clipboard and primary selection are separate. Copy/paste normally uses the regular clipboard; in many terminals Ctrl+Shift+C/V does that. Highlighting text and middle-clicking uses the primary selection. Shift+Insert behavior depends on the application. Test both selections explicitly. This setup does not implement a native portal Clipboard interface and does not advertise one.
 
@@ -100,7 +100,7 @@ systemctl --user stop synergy-clipboard.service
 
 ## Omarchy plugin status
 
-An optional shell plugin and two-device pairing wizard are [designed but not implemented](PLUGIN-DESIGN.md). This repository currently uses manual setup and the systemd companion; installing it through `omarchy plugin add` is not supported yet.
+The [Omarchy plugin and two-device pairing wizard](PLUGIN.md) provide receiver preparation, Direct LAN (SSH) or Tailscale (SSH) pairing, status, persistent pause and a transfer limit synchronized from either endpoint. Install the same plugin revision on both computers, prepare the receiver first and review the source pairing before enabling. The plugin does not install the input bridge or change portal routing.
 
 ## Validation and rollback
 

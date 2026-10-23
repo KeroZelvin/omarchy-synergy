@@ -6,11 +6,11 @@ An experimental companion for one pair of Linux Wayland computers running Synerg
 
 Requires Python 3.11+, `wl-clipboard` with data-control support in the active compositor, systemd user sessions, and an already working, trusted, noninteractive SSH connection. Choose OpenSSH (`transport = "ssh"`) over a LAN/VPN, or Tailscale SSH (`transport = "tailscale"`) with Tailscale installed. Install the same companion version on both computers. The input-source computer runs the coordinator; it starts the other endpoint over SSH. Only one pair per user session is supported. The remote endpoint needs an active Wayland session and `WAYLAND_DISPLAY` in its systemd user environment.
 
-Tested with Synergy 3.8.4, Omarchy 4.0.6, Hyprland 0.56.2, Python 3.14 and wl-clipboard 2.3. The original configurable Tailscale version passed 13 isolated tests on each test computer and real cross-machine Unicode/multiline text, PNG, primary-selection isolation, pause/resume, coordinator restart and receiving-endpoint restart checks. This repository adds an explicit OpenSSH transport; see [current validation](VALIDATION.md) for its separate test status. The owner also confirmed input and Shift/Codex behavior with the accompanying bridge. Reboot persistence and a long soak have not been tested.
+Tested with Synergy 3.8.4, Omarchy 4.0.6, Hyprland 0.56.2, Python 3.14 and wl-clipboard 2.3. The original configurable Tailscale version passed 13 isolated tests on each test computer and real cross-machine text/image/PRIMARY and pause/reconnect checks. The current plugin/runtime adds OpenSSH, persistent endpoint pause and pair-wide limits; see [current validation](VALIDATION.md). The owner also confirmed input and Shift/Codex behavior with the accompanying bridge. Reboot persistence and a long soak have not been tested.
 
 ## What gets shared
 
-One supported representation per clipboard change: UTF-8 text preferred, otherwise PNG, JPEG, WebP or BMP. The limit is 8 MiB decoded per transfer. HTML, rich text, file lists, drag-and-drop, unsupported selections and clearing a selection are not synchronized. This is not a clipboard history database. Concurrent writes on both computers can overwrite one another; there is no conflict-resolution protocol.
+One supported representation per clipboard change: UTF-8 text preferred, otherwise PNG, JPEG, WebP or BMP. The initial default is 8 MiB decoded per transfer. A pair-wide policy can increase it to 128 MiB through [the plugin](PLUGIN.md); the change synchronizes from either endpoint without repeating pairing. HTML, rich text, file lists, drag-and-drop, unsupported selections and clearing a selection are not synchronized. This is not a clipboard history database. Concurrent writes on both computers can overwrite one another; there is no conflict-resolution protocol.
 
 Transfers are encrypted and authenticated by the existing SSH transport. Payloads are handled in memory; this program does not log or write clipboard contents to files. The compositor, receiving application, OS swap, core dumps and any installed clipboard-history tools have their own retention behavior. All supported changes are shared while the connection is active, including sensitive text copied during that time. Treat both computers as trusted. The gate follows Synergy core/peer connection state and its allow-copy setting; it does not detect which computer currently has pointer focus or whether the screen is locked.
 
@@ -40,6 +40,7 @@ Edit `~/.config/synergy-clipboard/config.toml` on the input source:
 
 ```toml
 transport = "ssh"
+max_mib = 8
 remote_host = "your-user@your-peer"
 remote_script = "/home/your-user/.local/lib/synergy-clipboard/relay.py"
 peer_id = "REPLACE_WITH_THE_PEER_COMPUTER_ID"
@@ -95,16 +96,17 @@ systemctl --user disable --now synergy-clipboard.service
 rm ~/.config/systemd/user/synergy-clipboard.service
 rm ~/.config/synergy-clipboard/config.toml
 rm ~/.local/lib/synergy-clipboard/relay.py
+rm ~/.local/lib/synergy-clipboard/sharing_state.py
 systemctl --user daemon-reload
 ```
 
-On the remote computer, remove its installed `~/.local/lib/synergy-clipboard/relay.py` after the endpoint has exited.
+On the remote computer, remove the installed relay and sharing_state files only after the endpoint has exited. For a plugin-managed installation, follow [the plugin removal notes](PLUGIN.md); it installs additional helper modules and preserves private backups.
 
 ## Design and limitations
 
-`wl-paste --watch` generates selection-change events; bounded snapshots choose a supported MIME type. Per-selection digests suppress echoes. Transfer messages are bounded JSON/base64 frames over a single persistent SSH process. Unix notification sockets use the user's runtime directory and mode 0600. Protocol version 3 intentionally refuses the earlier private prototype's version 2 handshake.
+`wl-paste --watch` generates selection-change events; bounded snapshots choose a supported MIME type. Per-selection digests suppress echoes. Transfer messages are bounded JSON/base64 frames over a single persistent SSH process. Unix notification sockets use the user's runtime directory and mode 0600. Protocol version 5 adds peer pause acknowledgments and pair-wide transfer-limit requests; it refuses earlier handshakes. Install matching runtime revisions on both endpoints.
 
-Only the Synergy connection gate polls, every two seconds, because this small adapter has no supported subscription interface for Synergy 3 state. API failures pause transfers. The remote endpoint requires regular state heartbeats and exits on loss of the coordinator. This gate is a convenience rather than a security boundary; there can be a delay before a pause is observed. This package neither starts Synergy nor enables Tailscale SSH on a device.
+The Synergy connection gate polls every two seconds, because this small adapter has no supported subscription interface for Synergy 3 state. API failures pause transfers. The remote endpoint requires regular state heartbeats and exits on loss of the coordinator. Local pause/limit changes are observed at short intervals; acknowledgments keep both endpoints synchronized. Pause flags and limit policy are persisted privately, without clipboard payloads. This gate is a convenience rather than a security boundary; there can be a delay before a pause is observed. This package neither starts Synergy nor enables Tailscale SSH on a device.
 
 ## Contributing and attribution
 

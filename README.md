@@ -1,6 +1,6 @@
 # omarchy-synergy
 
-A community integration for Synergy 3 on Omarchy/Hyprland: setup instructions, reviewed input-bridge patches, and a clipboard companion for one pair of Wayland computers.
+A community integration for Synergy 3 on Omarchy/Hyprland: an Omarchy bar plugin and pairing wizard, setup instructions, reviewed input-bridge patches, and a clipboard companion for one pair of Wayland computers.
 
 The companion shares the regular clipboard and the primary selection (highlight text, then middle-click) independently and in both directions. It follows Synergy's core/peer connection state and allow-copy setting, with a short polling delay. Transfers use an existing trusted OpenSSH connection over your LAN or VPN; Tailscale SSH is an optional transport.
 
@@ -10,7 +10,8 @@ The companion shares the regular clipboard and the primary selection (highlight 
 - [Clipboard installation and configuration](docs/clipboard.md): requirements, SSH choice, startup, pause and removal.
 - [Input bridge patch series](patches/input-bridge/README.md): pinned upstream base, provenance and application instructions.
 - [Validation and limits](docs/VALIDATION.md), including [the original two-computer acceptance](docs/ACCEPTANCE.md).
-- [Plugin and pairing design](docs/PLUGIN-DESIGN.md): proposed Omarchy front end; not implemented yet.
+- [Plugin and pairing wizard](docs/PLUGIN.md): Direct LAN (SSH), Tailscale (SSH), status, persistent pause and pair-wide size controls.
+- [Plugin architecture](docs/PLUGIN-DESIGN.md): runtime, pairing and lifecycle contracts.
 - [Credits](docs/CREDITS.md) and [contributing](CONTRIBUTING.md).
 
 ## Status
@@ -23,12 +24,12 @@ The Python companion and example configuration are at the repository root. Run i
 python3 -m unittest discover -s tests -v
 ```
 
-The installer writes user files only, refuses existing destinations and starts nothing. Existing installations need a reviewed migration. No Synergy package, license, account credentials, SSH identity or personal machine configuration is included.
+The manual installer writes user files only, refuses existing destinations and starts nothing. The plugin wizard offers a separate reviewed setup/update flow with backups and explicit activation. No Synergy package, license, account credentials, SSH identity or personal machine configuration is included.
 
-The input bridge comes from the existing wayland-kdeconnect-fix project; its patches remain candidates for upstream contribution. This repository is an independent community project, with no claimed endorsement from Omarchy, Symless or Deskflow. It currently has no Omarchy plugin manifest or QML entry point; use the documented manual setup.
+The input bridge comes from the existing wayland-kdeconnect-fix project; its patches remain candidates for upstream contribution. This repository is an independent community project, with no claimed endorsement from Omarchy, Symless or Deskflow. The plugin supplies its own manifest and QML panel. Clipboard runtime files use stable user-local paths and stay independent of the widget lifecycle.
 
 ## Clipboard scope
 
-Supports one UTF-8 text or PNG/JPEG/WebP/BMP representation per change, up to 8 MiB. It does not synchronize rich text, file lists, drag-and-drop, clipboard history or selection clearing. Both computers must be trusted: supported copied contents are shared while enabled. The Synergy gate does not track pointer focus or lock-screen state and is not a security boundary.
+Supports one UTF-8 text or PNG/JPEG/WebP/BMP representation per change, with a default 8 MiB limit. The plugin supports a pair-wide limit from 1–128 MiB, synchronized from either endpoint. It does not synchronize rich text, file lists, drag-and-drop, clipboard history or selection clearing. Both computers must be trusted: supported copied contents are shared while enabled. The Synergy gate does not track pointer focus or lock-screen state and is not a security boundary.
 
 The clipboard code and documentation use the [MIT license](LICENSE). The bridge patches retain their own [upstream MIT notice](patches/input-bridge/UPSTREAM-LICENSE).
