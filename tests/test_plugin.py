@@ -235,5 +235,15 @@ class JobTests(PrivateHome):
         with self.assertRaises(ValueError): plugin.dispatch({"action": "execute", "command": "anything"})
 
 
+class CaptureLimitTests(unittest.IsolatedAsyncioTestCase):
+    async def test_capture_default_follows_the_updated_pair_limit(self):
+        command = ["/usr/bin/python3", "-c", "import sys;sys.stdout.buffer.write(b'x'*(9*1024*1024))"]
+        with patch.object(relay, "MAX_BYTES"), patch.object(relay, "MAX_LINE"):
+            relay.set_limit(16*1024*1024)
+            self.assertEqual(len(await relay.command(command)), 9*1024*1024)
+            relay.set_limit(8*1024*1024)
+            with self.assertRaises(ValueError): await relay.command(command)
+
+
 if __name__ == "__main__":
     unittest.main()

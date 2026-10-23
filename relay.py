@@ -117,7 +117,9 @@ def configure_environment():
         raise RuntimeError("Wayland session is unavailable")
 
 
-async def command(args, data=None, limit=MAX_BYTES, timeout=4):
+async def command(args, data=None, limit=None, timeout=4):
+    if limit is None:
+        limit = MAX_BYTES
     process = await asyncio.create_subprocess_exec(
         *args, stdin=asyncio.subprocess.PIPE if data is not None else asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
