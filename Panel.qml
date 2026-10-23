@@ -94,14 +94,17 @@ Panel {
       preview = result
       step = action === "receiver_preview" ? "receiver-review" : "source-review"
     } else {
+      var previousLimit = root.summary.requested_max_mib || 8
       summary = result
+      if (result.requested_max_mib && (action === "bootstrap" || result.requested_max_mib !== previousLimit) && !pairLimit.activeFocus)
+        pairLimit.value = result.requested_max_mib
       if (action === "bootstrap") {
         peers = result.peers || []
         var c = result.config || {}
         transport.currentIndex = c.transport === "tailscale" ? 1 : 0
         host.text = c.remote_host || ""
         seed.checked = c.initial_sync === "source"
-        limit.value = c.max_mib || result.max_mib || 8
+        limit.value = result.requested_max_mib || c.max_mib || result.max_mib || 8
         for (var i = 0; i < peers.length; ++i) if (peers[i].id === c.peer_id) peer.currentIndex = i
       }
       if (result.message) message = result.message
@@ -159,7 +162,8 @@ Panel {
     function pause(): void { root.request("pause") }
     function resume(): void { root.request("resume") }
     function reconnect(): void { root.request("reconnect") }
-    function state(): string { return JSON.stringify({ step: root.step, busy: root.busy, state: root.summary.state || "", role: root.summary.role || "", error: root.errorText, review: !!root.preview.token, max_mib: root.preview.max_mib || root.summary.max_mib || 8 }) }
+    function setLimit(maxMiB: int): void { pairLimit.value = maxMiB; root.request("set_limit", { max_mib: maxMiB }) }
+    function state(): string { return JSON.stringify({ step: root.step, busy: root.busy, state: root.summary.state || "", role: root.summary.role || "", error: root.errorText, review: !!root.preview.token, max_mib: root.preview.max_mib || root.summary.max_mib || 8, requested_max_mib: root.summary.requested_max_mib || 8, limit_pending: !!root.summary.limit_pending }) }
     function geometry(): string { return JSON.stringify({ screen: popup.screen ? popup.screen.name : "", x: popup.cardOrigin.x, y: popup.cardOrigin.y, width: popup.contentWidth, height: popup.contentHeight }) }
   }
 
@@ -227,6 +231,14 @@ Panel {
               Action { text: "Resume"; onClicked: root.request("resume") }
               Action { text: "Reconnect"; onClicked: root.request("reconnect") }
             }
+            Copy { visible: root.summary.role !== "unconfigured"; text: "Transfer limit for both computers"; font.bold: true }
+            RowLayout {
+              visible: root.summary.role !== "unconfigured"
+              SpinBox { id: pairLimit; objectName: "pairLimit"; from: 1; to: 128; value: 8; editable: true }
+              Copy { text: "MiB"; Layout.fillWidth: false }
+              Action { text: "Apply to both computers"; primary: true; onClicked: root.request("set_limit", { max_mib: pairLimit.value }) }
+            }
+            Copy { visible: !!root.summary.limit_pending; text: "Limit change pending — synchronizes when connected." }
             Action { text: "Setup guide"; onClicked: Quickshell.execDetached(["xdg-open", decodeURIComponent(String(Qt.resolvedUrl("docs/OMARCHY-GUIDE.md")).replace(/^file:\/\//, ""))]) }
             Copy { text: "Hiding or removing this widget leaves the independent companion service installed. Pause sharing here before removing it."; font.pixelSize: Style.font.bodySmall }
           }
@@ -273,7 +285,7 @@ Panel {
               text: "Replace the receiver's selections on each new connection"
               checked: false
             }
-            Action { text: "Check connection and review"; enabled: !root.busy && host.text.trim() !== "" && peer.currentIndex >= 0; onClicked: root.checkSource() }
+            Action { text: "Check connection and review"; primary: true; enabled: !root.busy && host.text.trim() !== "" && peer.currentIndex >= 0; onClicked: root.checkSource() }
           }
 
           RowLayout {
@@ -288,9 +300,9 @@ Panel {
             Copy { text: "Review before enabling"; font.bold: true }
             Copy { text: root.step === "receiver-review" ? "Prepare this computer as receiver" : "Pair with " + (root.preview.receiver || "receiver") }
             Copy { text: root.preview.changes || "" }
-            Copy { text: "Image/text limit: " + (root.preview.max_mib || 8) + " MiB. The smaller endpoint limit applies." }
+            Copy { text: "Image/text limit for the pair: " + (root.preview.max_mib || 8) + " MiB. The receiving setting synchronizes automatically." }
             Copy { text: "SSH, host identity, companion version, Synergy peer identity and Wayland data-control checks must pass. No input-bridge or portal settings are changed by this wizard."; font.pixelSize: Style.font.bodySmall }
-            Action { text: root.step === "receiver-review" ? "Prepare receiver" : "Save pairing and enable"; enabled: !root.busy && !!root.preview.token; onClicked: root.confirmReview() }
+            Action { text: root.step === "receiver-review" ? "Prepare receiver" : "Save pairing and enable"; primary: true; enabled: !root.busy && !!root.preview.token; onClicked: root.confirmReview() }
           }
           Action { visible: root.step !== "home"; text: "Cancel / Back"; onClicked: { root.step = "home"; root.preview = ({}) } }
         }
@@ -307,8 +319,30 @@ Panel {
     font.pixelSize: Style.font.body
   }
   component Action: Button {
+    id: actionButton
+    property bool primary: false
     enabled: !root.busy
-    palette.buttonText: Commons.Color.foreground
-    palette.button: Qt.darker(Commons.Color.popups.background, 1.15)
+    hoverEnabled: true
+    padding: Style.space(8)
+    leftPadding: Style.space(12)
+    rightPadding: Style.space(12)
+    font.family: Style.font.family
+    font.pixelSize: Style.font.body
+    contentItem: Text {
+      text: actionButton.text
+      font: actionButton.font
+      textFormat: Text.PlainText
+      color: Commons.Color.foreground
+      opacity: actionButton.enabled ? 1 : 0.45
+      horizontalAlignment: Text.AlignHCenter
+      verticalAlignment: Text.AlignVCenter
+    }
+    background: Rectangle {
+      radius: Style.space(5)
+      readonly property color tint: actionButton.primary ? Commons.Color.accent : Commons.Color.foreground
+      color: Qt.rgba(tint.r, tint.g, tint.b, !actionButton.enabled ? 0.04 : actionButton.down ? 0.25 : actionButton.hovered ? 0.18 : actionButton.primary ? 0.14 : 0.09)
+      border.width: actionButton.visualFocus ? 2 : 1
+      border.color: actionButton.visualFocus ? Commons.Color.accent : Qt.rgba(tint.r, tint.g, tint.b, actionButton.enabled ? 0.35 : 0.10)
+    }
   }
 }

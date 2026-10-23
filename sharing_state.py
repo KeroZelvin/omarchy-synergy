@@ -1,11 +1,13 @@
 """Private metadata and persistent user pause; never stores clipboard payloads."""
 import json
+import fcntl
 import os
 from pathlib import Path
 import tempfile
 import time
+import uuid
 
-WIRE_VERSION = 4
+WIRE_VERSION = 5
 MAX_MIB = 128
 
 
@@ -15,11 +17,43 @@ def validate_limit(value):
     return value
 
 
-def local_limit():
+def validate_limit_id(value):
+    if not isinstance(value, str) or len(value) != 32 or any(c not in "0123456789abcdef" for c in value):
+        raise ValueError("Invalid transfer-limit request.")
+    return value
+
+
+def limit_record(default=8):
     path = config_dir() / "limits.json"
     if not path.exists():
-        return 8
-    return validate_limit(json.loads(path.read_text())["max_mib"])
+        return {"max_mib": validate_limit(default), "request_id": "0"*32, "pending": False}
+    value = json.loads(path.read_text())
+    validate_limit(value["max_mib"])
+    identifier = value.get("request_id", "0"*32)
+    validate_limit_id(identifier)
+    return {"max_mib": value["max_mib"], "request_id": identifier, "pending": value.get("pending") is True}
+
+
+def local_limit(default=8):
+    return limit_record(default)["max_mib"]
+
+
+def save_limit(value, identifier=None, *, pending=False, adopt=False, acknowledge=False):
+    validate_limit(value)
+    identifier = uuid.uuid4().hex if identifier is None else validate_limit_id(identifier)
+    config_dir().mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd = os.open(config_dir()/"limits.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "wb") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        previous = limit_record()
+        if acknowledge and previous["request_id"] != identifier:
+            return False
+        if adopt and previous["pending"] and previous["request_id"] != identifier:
+            return False
+        new = {"max_mib": value, "request_id": identifier, "pending": pending}
+        if new != previous:
+            atomic_write(config_dir()/"limits.json", json.dumps(new).encode())
+    return True
 
 
 def config_dir():

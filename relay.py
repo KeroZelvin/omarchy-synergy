@@ -96,7 +96,7 @@ def parse_message(line):
     message = json.loads(line)
     if not isinstance(message, dict):
         raise ValueError("wire message must be an object")
-    if message.get("kind") not in {"hello", "ack", "state", "clipboard"}:
+    if message.get("kind") not in {"hello", "ack", "state", "clipboard", "limit_request"}:
         raise ValueError("unsupported message kind")
     if message.get("kind") == "clipboard" and message.get("selection") not in SELECTIONS:
         raise ValueError("unsupported selection")
@@ -291,7 +291,8 @@ class Clipboard:
 
 
 async def stdin_reader():
-    reader = asyncio.StreamReader(limit=MAX_LINE)
+    # Allow a live pair-wide increase; parse/decode still enforce the active cap.
+    reader = asyncio.StreamReader(limit=4*((sharing_state.MAX_MIB*1024*1024+2)//3)+8192)
     protocol = asyncio.StreamReaderProtocol(reader)
     await asyncio.get_running_loop().connect_read_pipe(lambda: protocol, sys.stdin.buffer)
     return reader
@@ -313,6 +314,7 @@ async def remote():
     source_name = ""
     transport = ""
     local_max = MAX_BYTES
+    limit_id = "0"*32
 
     async def send(message):
         wire = json.dumps(message, separators=(",", ":")).encode() + b"\n"
@@ -328,23 +330,30 @@ async def remote():
         for clipboard in clipboards.values():
             clipboard.enabled = enabled
         state = "manual-paused" if sharing_state.paused() else ("sharing" if enabled else "synergy-paused")
-        sharing_state.publish("receiver", state, source_name=source_name, transport=transport, max_mib=MAX_BYTES//(1024*1024))
-        await send({"kind": "ack", "enabled": enabled, "paused": sharing_state.paused()})
+        sharing_state.publish("receiver", state, source_name=source_name, transport=transport, max_mib=MAX_BYTES//(1024*1024), limit_id=limit_id)
+        await send({"kind": "ack", "enabled": enabled, "paused": sharing_state.paused(), "limit_id": limit_id})
         return enabled
 
     async def watch_pause():
         previous = None
+        sent_id = ""
+        next_retry = 0
         while True:
             current = sharing_state.paused()
             if current != previous:
                 await update_gate()
                 previous = current
+            request = sharing_state.limit_record()
+            if request["pending"] and (request["request_id"] != sent_id or time.monotonic() >= next_retry):
+                await send({"kind": "limit_request", **request})
+                sent_id = request["request_id"]
+                next_retry = time.monotonic()+2
             await asyncio.sleep(0.25)
 
     pause_task = None
     try:
         reader = await stdin_reader()
-        await send({"kind": "hello", "version": WIRE_VERSION, "max_bytes": local_max})
+        await send({"kind": "hello", "version": WIRE_VERSION, "max_bytes": sharing_state.MAX_MIB*1024*1024})
         pause_task = asyncio.create_task(watch_pause())
         while True:
             line = await asyncio.wait_for(reader.readline(), 30)
@@ -352,7 +361,9 @@ async def remote():
                 break
             message = parse_message(line)
             if message.get("kind") == "state":
-                negotiate_limit(message.get("max_bytes"), local_max)
+                negotiate_limit(message.get("max_bytes"), sharing_state.MAX_MIB*1024*1024)
+                limit_id = sharing_state.validate_limit_id(message.get("limit_id"))
+                sharing_state.save_limit(MAX_BYTES//(1024*1024), limit_id, adopt=True)
                 source_enabled = message.get("enabled") is True
                 source_name = str(message.get("source_name", ""))[:128]
                 transport = str(message.get("transport", ""))[:16]
@@ -403,6 +414,7 @@ async def coordinator(config):
     remote_enabled = False
     remote_paused = False
     local_max = MAX_BYTES
+    remote_cap = sharing_state.MAX_MIB*1024*1024
     write_lock = asyncio.Lock()
 
     async def send(message):
@@ -424,19 +436,23 @@ async def coordinator(config):
         synergy_enabled = False
         next_check = 0
         next_heartbeat = 0
+        previous_limit = ""
         while True:
             now = time.monotonic()
             if now >= next_check:
                 synergy_enabled = await asyncio.to_thread(synergy_connected, config["peer_id"])
                 next_check = now + 2
             intent = synergy_enabled and not sharing_state.paused()
+            setting = sharing_state.limit_record(config.get("max_mib", 8))
+            set_limit(min(setting["max_mib"]*1024*1024, remote_cap))
             enabled = intent and remote_enabled
             for clipboard in clipboards.values():
                 clipboard.enabled = enabled
-            if now >= next_heartbeat or intent != previous:
+            if now >= next_heartbeat or intent != previous or setting["request_id"] != previous_limit:
                 await send({"kind": "state", "enabled": intent,
-                            "source_name": socket.gethostname(), "transport": config.get("transport", "tailscale"), "max_bytes": MAX_BYTES})
+                            "source_name": socket.gethostname(), "transport": config.get("transport", "tailscale"), "max_bytes": MAX_BYTES, "limit_id": setting["request_id"]})
                 next_heartbeat = now + 2
+                previous_limit = setting["request_id"]
             if enabled and not seeded and config["initial_sync"] == "source":
                 for clipboard in clipboards.values():
                     await clipboard.seed()
@@ -444,7 +460,7 @@ async def coordinator(config):
             state = ("manual-paused" if sharing_state.paused() else
                      "peer-paused" if remote_paused else
                      "sharing" if enabled else "synergy-paused" if not synergy_enabled else "connecting")
-            sharing_state.publish("source", state, transport=config.get("transport", "tailscale"), max_mib=MAX_BYTES//(1024*1024))
+            sharing_state.publish("source", state, transport=config.get("transport", "tailscale"), max_mib=MAX_BYTES//(1024*1024), limit_id=setting["request_id"])
             previous = intent
             await asyncio.sleep(0.25)
 
@@ -458,12 +474,13 @@ async def coordinator(config):
                 set_limit(local_max)
                 process = await asyncio.create_subprocess_exec(
                     *remote_command(config), stdin=asyncio.subprocess.PIPE,
-                    stdout=asyncio.subprocess.PIPE, stderr=None, limit=MAX_LINE)
+                    stdout=asyncio.subprocess.PIPE, stderr=None, limit=4*((sharing_state.MAX_MIB*1024*1024+2)//3)+8192)
                 first = await asyncio.wait_for(process.stdout.readline(), 20)
                 hello = parse_message(first)
                 if hello.get("kind") != "hello" or hello.get("version") != WIRE_VERSION:
                     raise RuntimeError("remote handshake failed")
                 negotiate_limit(hello.get("max_bytes"), local_max)
+                remote_cap = hello["max_bytes"]
                 LOG.info("Encrypted clipboard connection established")
                 backoff = 1
                 gate_task = asyncio.create_task(gate())
@@ -478,6 +495,11 @@ async def coordinator(config):
                         if not remote_enabled:
                             for clipboard in clipboards.values():
                                 clipboard.enabled = False
+                        setting = sharing_state.limit_record(config.get("max_mib", 8))
+                        if message.get("limit_id") == setting["request_id"]:
+                            sharing_state.save_limit(setting["max_mib"], setting["request_id"], acknowledge=True)
+                    elif message.get("kind") == "limit_request":
+                        sharing_state.save_limit(message.get("max_mib"), sharing_state.validate_limit_id(message.get("request_id")), pending=True)
                     elif message.get("kind") == "clipboard":
                         if sharing_state.paused():
                             clipboards[message["selection"]].enabled = False
@@ -530,7 +552,7 @@ def notify(path):
 
 async def main(mode, config=None):
     configure_environment()
-    set_limit((config.get("max_mib", 8) if mode == "coordinator" else sharing_state.local_limit())*1024*1024)
+    set_limit(sharing_state.local_limit(config.get("max_mib", 8) if mode == "coordinator" else 8)*1024*1024)
     task = asyncio.create_task(remote() if mode == "remote" else coordinator(config))
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):

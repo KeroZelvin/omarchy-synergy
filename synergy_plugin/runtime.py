@@ -115,6 +115,7 @@ def endpoint():
     return {"app": "omarchy-synergy", "version": VERSION, "wire_version": sharing_state.WIRE_VERSION,
             "bundle": storage.bundle_digest(), "role": storage.role(), "checks": checks,
             "max_mib": sharing_state.local_limit(),
+            "max_supported_mib": sharing_state.MAX_MIB,
             "synergy_id": synergy["my_id"], "name": synergy["name"],
             "user": getpass.getuser(), "hostname": socket.gethostname(),
             "remote_script": str(storage.install_dir()/"relay.py")}
@@ -140,8 +141,10 @@ def status():
         matches = storage.bundle_digest() == storage.bundle_digest(storage.install_dir())
     except OSError:
         matches = False
+    limit = sharing_state.limit_record(config.get("max_mib", 8))
     return {"role": role, "state": state, "transport": config.get("transport", (record or {}).get("transport", "")),
             "source_name": (record or {}).get("source_name", ""), "config": config,
             "max_mib": (record or {}).get("max_mib", config.get("max_mib", sharing_state.local_limit())),
+            "requested_max_mib": limit["max_mib"], "limit_pending": limit["pending"],
             "runtime_matches": matches,
             "version": VERSION}

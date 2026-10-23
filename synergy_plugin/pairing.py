@@ -58,7 +58,7 @@ def prepare_receiver(request):
     try:
         transaction.install()
         sharing_state.atomic_write(storage.role_path(), b'{"role":"receiver"}\n')
-        sharing_state.atomic_write(sharing_state.config_dir()/"limits.json", json.dumps({"max_mib": preview["max_mib"]}).encode())
+        sharing_state.save_limit(preview["max_mib"])
     except BaseException:
         transaction.restore()
         raise
@@ -115,7 +115,10 @@ def check_source(request):
     config = {"transport": mode, "remote_host": host, "remote_script": remote.get("remote_script"),
               "peer_id": selected["id"], "initial_sync": initial,
               "max_mib": sharing_state.validate_limit(request.get("max_mib", 8))}
-    effective_limit = min(config["max_mib"], sharing_state.validate_limit(remote.get("max_mib")))
+    supported = sharing_state.validate_limit(remote.get("max_supported_mib"))
+    if config["max_mib"] > supported:
+        raise ValueError("The receiver does not support this transfer limit.")
+    effective_limit = config["max_mib"]
     script = config["remote_script"]
     if not isinstance(script, str) or not script.startswith("/") or any(c in script for c in "\x00\r\n"):
         raise ValueError("The receiver supplied an invalid companion path.")
@@ -139,6 +142,7 @@ def apply_source(request):
         transaction.install()
         sharing_state.atomic_write(storage.config_path(), ("\n".join(f"{key} = {json.dumps(value)}" for key, value in preview["config"].items()) + "\n").encode())
         sharing_state.atomic_write(storage.role_path(), b'{"role":"source"}\n')
+        sharing_state.save_limit(preview["config"]["max_mib"], pending=True)
         sharing_state.atomic_write(storage.unit_path(), (storage.ROOT/"synergy-clipboard.service").read_bytes())
         runtime.reload_manager()
         runtime.service("enable")
@@ -155,11 +159,15 @@ def apply_source(request):
             "backup": str(transaction.backup), **bootstrap()}
 
 
-def control(action):
+def control(action, request=None):
     role = storage.role()
     if role == "unconfigured":
         raise ValueError("Prepare or pair this computer first.")
-    if action == "pause":
+    if action == "set_limit":
+        if not runtime.status().get("runtime_matches"):
+            raise ValueError("Update this companion using Setup before changing the pair limit.")
+        sharing_state.save_limit((request or {}).get("max_mib"), pending=True)
+    elif action == "pause":
         sharing_state.set_paused(True)
         if role == "source":
             runtime.service("stop")
@@ -179,5 +187,6 @@ def control(action):
     else:
         raise ValueError("Unsupported sharing action.")
     return {"message": {"pause": "Clipboard sharing paused. The pause survives restarts.",
+                        "set_limit": "Transfer limit saved for both computers. It synchronizes when the encrypted connection is available.",
                         "resume": "Resume requested; waiting for the connection and Synergy.",
                         "reconnect": "Reconnect requested."}[action], **runtime.status()}

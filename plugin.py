@@ -27,8 +27,8 @@ def dispatch(request):
         return pairing.check_source(request)
     if action == "apply_source":
         return pairing.apply_source(request)
-    if action in {"pause", "resume", "reconnect"}:
-        return pairing.control(action)
+    if action in {"pause", "resume", "reconnect", "set_limit"}:
+        return pairing.control(action, request)
     raise ValueError("Unsupported setup action.")
 
 

@@ -75,6 +75,16 @@ class StateTests(PrivateHome):
         with self.assertRaises(ValueError):
             sharing_state.set_paused(False)
 
+    def test_limit_pending_request_survives_old_ack_then_converges(self):
+        sharing_state.save_limit(128, "a"*32, pending=True)
+        self.assertFalse(sharing_state.save_limit(64, "b"*32, adopt=True))
+        self.assertFalse(sharing_state.save_limit(64, "b"*32, acknowledge=True))
+        self.assertEqual(sharing_state.limit_record()["max_mib"], 128)
+        self.assertTrue(sharing_state.save_limit(128, "a"*32, acknowledge=True))
+        self.assertFalse(sharing_state.limit_record()["pending"])
+        self.assertTrue(sharing_state.save_limit(32, "c"*32, adopt=True))
+        self.assertEqual(sharing_state.local_limit(), 32)
+
 
 class PairingTests(PrivateHome):
     def setUp(self):
@@ -88,7 +98,7 @@ class PairingTests(PrivateHome):
         self.peer = {"app": "omarchy-synergy", "wire_version": sharing_state.WIRE_VERSION,
                      "bundle": storage.bundle_digest(), "role": "receiver", "checks": CHECKS,
                      "synergy_id": PEER, "name": "Receiver", "user": "peer-user",
-                     "remote_script": "/home/peer-user/.local/lib/synergy-clipboard/relay.py", "max_mib": 32}
+                     "remote_script": "/home/peer-user/.local/lib/synergy-clipboard/relay.py", "max_mib": 32, "max_supported_mib": 128}
         self.remote = patch.object(pairing, "remote_endpoint", return_value=self.peer)
         self.remote.start()
         self.request = {"transport": "ssh", "remote_host": "receiver-alias", "peer_id": PEER, "initial_sync": "none", "max_mib": 64}
@@ -97,9 +107,9 @@ class PairingTests(PrivateHome):
         self.remote.stop(); self.manager.stop(); self.services.stop(); self.requirements.stop(); self.local.stop()
         super().tearDown()
 
-    def test_check_is_read_only_and_negotiates_smaller_limit(self):
+    def test_check_is_read_only_and_selects_pair_limit_without_matching_presets(self):
         preview = pairing.check_source(self.request)
-        self.assertEqual(preview["max_mib"], 32)
+        self.assertEqual(preview["max_mib"], 64)
         self.assertFalse(storage.config_path().exists())
         self.assertFalse(storage.install_dir().exists())
         self.service.assert_not_called()
@@ -151,6 +161,15 @@ class PairingTests(PrivateHome):
         sharing_state.atomic_write(storage.role_path(), b'{"role":"receiver"}')
         pairing.control("pause")
         self.assertTrue(sharing_state.paused())
+        self.service.assert_not_called()
+
+    def test_limit_change_is_a_pair_request_without_repair_or_service_restart(self):
+        sharing_state.atomic_write(storage.role_path(), b'{"role":"receiver"}')
+        with patch.object(runtime, "status", return_value={"runtime_matches": True}):
+            pairing.control("set_limit", {"max_mib": 128})
+        self.assertTrue(sharing_state.limit_record()["pending"])
+        self.assertEqual(sharing_state.local_limit(), 128)
+        self.assertFalse(storage.config_path().exists())
         self.service.assert_not_called()
 
 
