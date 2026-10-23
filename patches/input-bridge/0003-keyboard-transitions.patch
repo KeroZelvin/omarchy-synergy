@@ -1,0 +1,291 @@
+From 5ce1b229362bec7716817851f8d3181da3105507 Mon Sep 17 00:00:00 2001
+From: Local review draft <review@example.invalid>
+Date: Fri, 23 Oct 2026 13:14:53 -0700
+Subject: [PATCH 3/3] Ignore duplicate keyboard transitions to prevent stuck
+ Shift
+
+---
+ CMakeLists.txt                    |  6 ++++
+ docs/input-compatibility.md       |  2 ++
+ src/keyboard_modifiers.hpp        |  5 ++-
+ src/keyboard_state.hpp            | 32 ++++++++++++++++++
+ src/wayland_input.cpp             | 17 ++++------
+ src/wayland_input.hpp             |  4 ++-
+ tests/keyboard_modifiers_test.cpp | 24 ++++++++-----
+ tests/keyboard_state_test.cpp     | 56 +++++++++++++++++++++++++++++++
+ 8 files changed, 122 insertions(+), 24 deletions(-)
+ create mode 100644 src/keyboard_state.hpp
+ create mode 100644 tests/keyboard_state_test.cpp
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 3ea45ad..8d9ef94 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -148,6 +148,12 @@ target_link_libraries(hypr-kdeconnect-portal PRIVATE
+ hkcf_apply_target_defaults(hypr-kdeconnect-portal)
+ 
+ if(BUILD_TESTING)
++  add_executable(keyboard-state-test tests/keyboard_state_test.cpp)
++  target_include_directories(keyboard-state-test PRIVATE src)
++  target_link_libraries(keyboard-state-test PRIVATE PkgConfig::XKBCOMMON)
++  hkcf_apply_target_defaults(keyboard-state-test)
++  add_test(NAME keyboard-state-test COMMAND keyboard-state-test)
++
+   add_executable(keyboard-modifiers-test tests/keyboard_modifiers_test.cpp)
+   target_include_directories(keyboard-modifiers-test PRIVATE src)
+   target_link_libraries(keyboard-modifiers-test PRIVATE PkgConfig::XKBCOMMON)
+diff --git a/docs/input-compatibility.md b/docs/input-compatibility.md
+index 9bfb811..0e9d526 100644
+--- a/docs/input-compatibility.md
++++ b/docs/input-compatibility.md
+@@ -2,4 +2,6 @@
+ 
+ The EIS compatibility patch requires libeis 1.6 because it handles `EIS_EVENT_SEAT_DEVICE_REQUESTED`. It advertises buttons and scrolling on the absolute pointer, sets a valid physical scale, and converts v120 discrete scrolling to Wayland wheel steps without reversing the sign. Virtual keyboard events update xkb modifier state using the same keymap sent to the compositor.
+ 
++Only physical key-state transitions update xkb and reach the virtual keyboard. Repeated key-down events must not accumulate extra modifier references: otherwise one physical release can leave Shift held, making Enter behave like Shift+Enter in applications. The receiving-machine fix tracks pressed evdev codes, suppresses duplicate downs and unmatched releases, and preserves independent left/right Shift and lock state. Tests cover the repeated-modifier regression and unmodified Enter after release.
++
+ Desktop bounds include every output instead of the first one. The accepted hardware test used two adjacent 1920×1080 monitors at scale 1, configured before the bridge started. This is not a complete logical-output implementation: fractional or mixed scaling, rotation, output removal and EIS region renegotiation after hotplug still need work. Restart the bridge after changing monitor geometry. Do not describe these changes as general multi-monitor or keyboard-layout support.
+diff --git a/src/keyboard_modifiers.hpp b/src/keyboard_modifiers.hpp
+index d2b2f13..d54902a 100644
+--- a/src/keyboard_modifiers.hpp
++++ b/src/keyboard_modifiers.hpp
+@@ -12,9 +12,8 @@ struct KeyboardModifiers {
+     xkb_layout_index_t group;
+ };
+ 
+-// libei and virtual-keyboard use evdev codes; xkbcommon adds eight.
+-inline KeyboardModifiers updateKeyboardModifiers(xkb_state* state, std::uint32_t keycode, bool pressed) {
+-    xkb_state_update_key(state, keycode + 8, pressed ? XKB_KEY_DOWN : XKB_KEY_UP);
++// KeyboardState applies physical transitions before these masks are sent.
++inline KeyboardModifiers keyboardModifiers(xkb_state* state) {
+     return {
+         xkb_state_serialize_mods(state, XKB_STATE_MODS_DEPRESSED),
+         xkb_state_serialize_mods(state, XKB_STATE_MODS_LATCHED),
+diff --git a/src/keyboard_state.hpp b/src/keyboard_state.hpp
+new file mode 100644
+index 0000000..496c1aa
+--- /dev/null
++++ b/src/keyboard_state.hpp
+@@ -0,0 +1,32 @@
++#pragma once
++
++#include <cstdint>
++#include <set>
++#include <xkbcommon/xkbcommon.h>
++
++namespace hkcf {
++
++// XKB counts repeated down events. Only physical state transitions may update it.
++class KeyboardState {
++  public:
++    explicit KeyboardState(xkb_keymap* keymap) : m_state(xkb_state_new(keymap)) {}
++    ~KeyboardState() { if (m_state) xkb_state_unref(m_state); }
++    KeyboardState(const KeyboardState&) = delete;
++    KeyboardState& operator=(const KeyboardState&) = delete;
++
++    xkb_state* get() const { return m_state; }
++
++    bool update(std::uint32_t evdevCode, bool pressed) {
++        if (!m_state) return false;
++        const bool changed = pressed ? m_pressed.insert(evdevCode).second : m_pressed.erase(evdevCode) != 0;
++        if (changed)
++            xkb_state_update_key(m_state, evdevCode + 8, pressed ? XKB_KEY_DOWN : XKB_KEY_UP);
++        return changed;
++    }
++
++  private:
++    xkb_state* m_state = nullptr;
++    std::set<std::uint32_t> m_pressed;
++};
++
++} // namespace hkcf
+diff --git a/src/wayland_input.cpp b/src/wayland_input.cpp
+index cbf455d..737f91c 100644
+--- a/src/wayland_input.cpp
++++ b/src/wayland_input.cpp
+@@ -211,13 +211,11 @@ bool WaylandInput::sendKeyboardKeymap() {
+     }
+ 
+     char* keymapText = xkb_keymap_get_as_string(keymap, XKB_KEYMAP_FORMAT_TEXT_V1);
+-    if (m_keyboardState)
+-        xkb_state_unref(m_keyboardState);
+-    m_keyboardState = xkb_state_new(keymap);
++    m_keyboardState = std::make_unique<KeyboardState>(keymap);
+     xkb_keymap_unref(keymap);
+     xkb_context_unref(context);
+ 
+-    if (!keymapText || !m_keyboardState) {
++    if (!keymapText || !m_keyboardState->get()) {
+         free(keymapText);
+         setError(QStringLiteral("failed to serialize xkb keymap"));
+         return false;
+@@ -357,9 +355,9 @@ bool WaylandInput::keyboardKeycode(std::uint32_t keycode, bool pressed) {
+     if (!ensureReady())
+         return false;
+ 
+-    zwp_virtual_keyboard_v1_key(m_keyboard, timeMs(), keycode, pressed ? kKeyboardKeyPressed : kKeyboardKeyReleased);
+-    if (m_keyboardState) {
+-        const auto mods = updateKeyboardModifiers(m_keyboardState, keycode, pressed);
++    if (m_keyboardState && m_keyboardState->update(keycode, pressed)) {
++        zwp_virtual_keyboard_v1_key(m_keyboard, timeMs(), keycode, pressed ? kKeyboardKeyPressed : kKeyboardKeyReleased);
++        const auto mods = keyboardModifiers(m_keyboardState->get());
+         zwp_virtual_keyboard_v1_modifiers(m_keyboard,
+             mods.depressed, mods.latched, mods.locked, mods.group);
+     }
+@@ -460,10 +458,7 @@ void WaylandInput::cleanup() {
+     for (auto* output : m_outputs.keys())
+         wl_output_destroy(output);
+     m_outputs.clear();
+-    if (m_keyboardState) {
+-        xkb_state_unref(m_keyboardState);
+-        m_keyboardState = nullptr;
+-    }
++    m_keyboardState.reset();
+     if (m_seat) {
+         wl_seat_destroy(m_seat);
+         m_seat = nullptr;
+diff --git a/src/wayland_input.hpp b/src/wayland_input.hpp
+index 76c89ed..57487d1 100644
+--- a/src/wayland_input.hpp
++++ b/src/wayland_input.hpp
+@@ -1,9 +1,11 @@
+ #pragma once
+ 
+ #include "key_resolver.hpp"
++#include "keyboard_state.hpp"
+ 
+ #include <cstdint>
+ #include <optional>
++#include <memory>
+ 
+ #include <QElapsedTimer>
+ #include <QHash>
+@@ -75,7 +77,7 @@ class WaylandInput {
+     void cleanup();
+     void setError(const QString& error);
+ 
+-    xkb_state* m_keyboardState = nullptr;
++    std::unique_ptr<KeyboardState> m_keyboardState;
+     wl_display* m_display = nullptr;
+     wl_registry* m_registry = nullptr;
+     wl_seat* m_seat = nullptr;
+diff --git a/tests/keyboard_modifiers_test.cpp b/tests/keyboard_modifiers_test.cpp
+index 1ea74da..e13c328 100644
+--- a/tests/keyboard_modifiers_test.cpp
++++ b/tests/keyboard_modifiers_test.cpp
+@@ -1,4 +1,5 @@
+ #include "keyboard_modifiers.hpp"
++#include "keyboard_state.hpp"
+ 
+ #include <cstdlib>
+ #include <iostream>
+@@ -8,9 +9,15 @@ int main() {
+     auto* context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+     const xkb_rule_names names{.rules = nullptr, .model = nullptr, .layout = "us", .variant = nullptr, .options = nullptr};
+     auto* keymap = xkb_keymap_new_from_names(context, &names, XKB_KEYMAP_COMPILE_NO_FLAGS);
+-    auto* state = keymap ? xkb_state_new(keymap) : nullptr;
+-    if (!state)
++    if (!keymap)
+         return EXIT_FAILURE;
++    hkcf::KeyboardState state(keymap);
++    if (!state.get())
++        return EXIT_FAILURE;
++    auto update = [&](std::uint32_t key, bool pressed) {
++        state.update(key, pressed);
++        return hkcf::keyboardModifiers(state.get());
++    };
+ 
+     int failures = 0;
+     auto expect = [&](bool condition, const char* message) {
+@@ -22,20 +29,19 @@ int main() {
+     const auto shift = 1u << xkb_keymap_mod_get_index(keymap, XKB_MOD_NAME_SHIFT);
+     const auto ctrl = 1u << xkb_keymap_mod_get_index(keymap, XKB_MOD_NAME_CTRL);
+     const auto caps = 1u << xkb_keymap_mod_get_index(keymap, XKB_MOD_NAME_CAPS);
+-    auto mods = hkcf::updateKeyboardModifiers(state, KEY_LEFTSHIFT, true);
++    auto mods = update(KEY_LEFTSHIFT, true);
+     expect((mods.depressed & shift) != 0, "Shift must become active on evdev press");
+-    mods = hkcf::updateKeyboardModifiers(state, KEY_LEFTCTRL, true);
++    mods = update(KEY_LEFTCTRL, true);
+     expect((mods.depressed & (shift | ctrl)) == (shift | ctrl), "Ctrl+Shift must retain both modifiers");
+-    mods = hkcf::updateKeyboardModifiers(state, KEY_LEFTSHIFT, false);
++    mods = update(KEY_LEFTSHIFT, false);
+     expect((mods.depressed & shift) == 0 && (mods.depressed & ctrl) != 0, "releasing Shift must preserve Ctrl");
+-    mods = hkcf::updateKeyboardModifiers(state, KEY_LEFTCTRL, false);
++    mods = update(KEY_LEFTCTRL, false);
+     expect(mods.depressed == 0, "released modifiers must not stick");
+-    hkcf::updateKeyboardModifiers(state, KEY_CAPSLOCK, true);
+-    mods = hkcf::updateKeyboardModifiers(state, KEY_CAPSLOCK, false);
++    update(KEY_CAPSLOCK, true);
++    mods = update(KEY_CAPSLOCK, false);
+     expect((mods.locked & caps) != 0, "Caps Lock must survive release as locked, not depressed");
+     expect(mods.depressed == 0, "Caps Lock release must clear depressed state");
+ 
+-    xkb_state_unref(state);
+     xkb_keymap_unref(keymap);
+     xkb_context_unref(context);
+     return failures ? EXIT_FAILURE : EXIT_SUCCESS;
+diff --git a/tests/keyboard_state_test.cpp b/tests/keyboard_state_test.cpp
+new file mode 100644
+index 0000000..da9ae81
+--- /dev/null
++++ b/tests/keyboard_state_test.cpp
+@@ -0,0 +1,56 @@
++#include "keyboard_state.hpp"
++
++#include <cstdlib>
++#include <iostream>
++#include <linux/input-event-codes.h>
++
++int main() {
++    auto* context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
++    if (!context) return EXIT_FAILURE;
++    const xkb_rule_names names{.rules = nullptr, .model = nullptr, .layout = "us", .variant = nullptr, .options = nullptr};
++    auto* keymap = xkb_keymap_new_from_names(context, &names, XKB_KEYMAP_COMPILE_NO_FLAGS);
++    if (!keymap) return EXIT_FAILURE;
++    hkcf::KeyboardState state(keymap);
++    int failures = 0;
++    auto expect = [&](bool ok, const char* message) {
++        if (!ok) { std::cerr << "FAIL: " << message << '\n'; ++failures; }
++    };
++    auto mods = [&]() { return xkb_state_serialize_mods(state.get(), XKB_STATE_MODS_DEPRESSED); };
++    auto sym = [&](unsigned key) { return xkb_state_key_get_one_sym(state.get(), key + 8); };
++
++    // The original bridge updated XKB twice, requiring two releases for Shift.
++    for (auto key : {KEY_LEFTSHIFT, KEY_RIGHTSHIFT, KEY_LEFTMETA, KEY_RIGHTMETA, KEY_LEFTCTRL, KEY_LEFTALT}) {
++        expect(state.update(key, true), "first modifier down must be delivered");
++        expect(mods() != 0, "modifier must become active");
++        expect(!state.update(key, true), "duplicate modifier down must be ignored");
++        expect(state.update(key, false), "single release must be delivered");
++        expect(mods() == 0, "single release must clear repeated modifier");
++        expect(!state.update(key, false), "unmatched release must be ignored");
++    }
++
++    state.update(KEY_LEFTSHIFT, true);
++    expect(sym(KEY_1) == XKB_KEY_exclam, "Shift must still produce symbols");
++    state.update(KEY_RIGHTSHIFT, true);
++    state.update(KEY_LEFTSHIFT, false);
++    expect(sym(KEY_1) == XKB_KEY_exclam, "other Shift must remain held");
++    state.update(KEY_RIGHTSHIFT, false);
++    expect(sym(KEY_1) == XKB_KEY_1, "number row must return to digits");
++    expect(sym(KEY_ENTER) == XKB_KEY_Return && mods() == 0, "Enter must be unmodified after cleanup");
++
++    expect(state.update(KEY_ENTER, true), "Enter down must be delivered");
++    expect(!state.update(KEY_ENTER, true), "repeat must not accumulate pressed state");
++    expect(state.update(KEY_ENTER, false), "Enter release must be delivered");
++    expect(state.update(KEY_ENTER, true), "Enter must work again after release");
++    state.update(KEY_ENTER, false);
++
++    state.update(KEY_NUMLOCK, true);
++    state.update(KEY_NUMLOCK, false);
++    const auto locked = xkb_state_serialize_mods(state.get(), XKB_STATE_MODS_LOCKED);
++    state.update(KEY_LEFTSHIFT, true);
++    state.update(KEY_LEFTSHIFT, false);
++    expect(locked != 0 && xkb_state_serialize_mods(state.get(), XKB_STATE_MODS_LOCKED) == locked,
++           "modifier cleanup must preserve NumLock");
++    xkb_keymap_unref(keymap);
++    xkb_context_unref(context);
++    return failures ? EXIT_FAILURE : EXIT_SUCCESS;
++}
+-- 
+2.56.0
+

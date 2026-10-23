@@ -1,0 +1,395 @@
+From dc91c15d1e952b5d49bd6f506a6af64ef2479cbe Mon Sep 17 00:00:00 2001
+From: Local review draft <review@example.invalid>
+Date: Fri, 23 Oct 2026 12:36:01 -0700
+Subject: [PATCH 2/3] Handle libeis 1.6 input and preserve virtual keyboard
+ modifiers
+
+---
+ CMakeLists.txt                    |  8 ++++-
+ README.md                         | 14 ++++++---
+ docs/input-compatibility.md       |  5 +++
+ src/eis_input_bridge.cpp          | 23 ++++++--------
+ src/keyboard_modifiers.hpp        | 26 ++++++++++++++++
+ src/wayland_input.cpp             | 52 +++++++++++++++++++++----------
+ src/wayland_input.hpp             |  5 +--
+ tests/keyboard_modifiers_test.cpp | 42 +++++++++++++++++++++++++
+ 8 files changed, 138 insertions(+), 37 deletions(-)
+ create mode 100644 docs/input-compatibility.md
+ create mode 100644 src/keyboard_modifiers.hpp
+ create mode 100644 tests/keyboard_modifiers_test.cpp
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 563e74f..3ea45ad 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -95,7 +95,7 @@ find_package(Qt6 6.5 REQUIRED COMPONENTS Core DBus)
+ 
+ pkg_check_modules(WAYLAND_CLIENT REQUIRED IMPORTED_TARGET wayland-client>=1.20)
+ pkg_check_modules(XKBCOMMON REQUIRED IMPORTED_TARGET xkbcommon>=1.5)
+-pkg_check_modules(LIBEIS REQUIRED IMPORTED_TARGET libeis-1.0>=1.4)
++pkg_check_modules(LIBEIS REQUIRED IMPORTED_TARGET libeis-1.0>=1.6)
+ 
+ find_program(WAYLAND_SCANNER_EXECUTABLE wayland-scanner REQUIRED)
+ 
+@@ -148,6 +148,12 @@ target_link_libraries(hypr-kdeconnect-portal PRIVATE
+ hkcf_apply_target_defaults(hypr-kdeconnect-portal)
+ 
+ if(BUILD_TESTING)
++  add_executable(keyboard-modifiers-test tests/keyboard_modifiers_test.cpp)
++  target_include_directories(keyboard-modifiers-test PRIVATE src)
++  target_link_libraries(keyboard-modifiers-test PRIVATE PkgConfig::XKBCOMMON)
++  hkcf_apply_target_defaults(keyboard-modifiers-test)
++  add_test(NAME keyboard-modifiers-test COMMAND keyboard-modifiers-test)
++
+   add_executable(key-resolver-test
+     src/key_resolver.cpp
+     tests/key_resolver_test.cpp
+diff --git a/README.md b/README.md
+index 05766c2..3757cf4 100644
+--- a/README.md
++++ b/README.md
+@@ -31,6 +31,11 @@ Implemented:
+ - keyboard keysym input through `xkbcommon`
+ - libei `ConnectToEIS` sender clients through a minimal `libeis` bridge
+ 
++Native Synergy 3 clients also require the caller-verification setup described in
++[docs/synergy.md](docs/synergy.md). Read its optional service override and tested
++hardware limits before installing. Clipboard sharing is not implemented by this
++portal backend.
++
+ Not implemented:
+ 
+ - touchscreen events
+@@ -52,7 +57,7 @@ Build-time:
+ - `wayland-client` 1.20+
+ - `wayland-scanner`
+ - `xkbcommon` 1.5+
+-- `libeis` 1.4+
++- `libeis` 1.6+
+ 
+ Runtime:
+ 
+@@ -216,9 +221,10 @@ prompt on top of that, so it narrows the D-Bus attack surface instead:
+ - RemoteDesktop and Session methods are accepted only from the current
+   `org.freedesktop.portal.Desktop` owner.
+ - Sessions are bound to that D-Bus sender and capped in number.
+-- Empty app ids and substring spoofing are rejected. Accepted ids are exact KDE
+-  Connect desktop ids plus the `surface-transient` fallback used by some
+-  non-windowed local clients.
++- Accepted app ids are exact KDE Connect desktop ids. Empty and
++  `surface-transient` ids require verification of the native caller; arbitrary
++  executables and substring spoofing remain rejected. See the native Synergy
++  compatibility notes for the additional exact executable path.
+ - Notify calls are checked against the selected device mask and bounded before
+   being forwarded to Wayland.
+ 
+diff --git a/docs/input-compatibility.md b/docs/input-compatibility.md
+new file mode 100644
+index 0000000..9bfb811
+--- /dev/null
++++ b/docs/input-compatibility.md
+@@ -0,0 +1,5 @@
++# EIS input compatibility and tested limits
++
++The EIS compatibility patch requires libeis 1.6 because it handles `EIS_EVENT_SEAT_DEVICE_REQUESTED`. It advertises buttons and scrolling on the absolute pointer, sets a valid physical scale, and converts v120 discrete scrolling to Wayland wheel steps without reversing the sign. Virtual keyboard events update xkb modifier state using the same keymap sent to the compositor.
++
++Desktop bounds include every output instead of the first one. The accepted hardware test used two adjacent 1920×1080 monitors at scale 1, configured before the bridge started. This is not a complete logical-output implementation: fractional or mixed scaling, rotation, output removal and EIS region renegotiation after hotplug still need work. Restart the bridge after changing monitor geometry. Do not describe these changes as general multi-monitor or keyboard-layout support.
+diff --git a/src/eis_input_bridge.cpp b/src/eis_input_bridge.cpp
+index 5e1fbfc..424a175 100644
+--- a/src/eis_input_bridge.cpp
++++ b/src/eis_input_bridge.cpp
+@@ -124,16 +124,10 @@ void configureRegion(eis_device* device, const QRect& bounds) {
+     eis_region_set_size(region,
+                         static_cast<std::uint32_t>(std::max(1, bounds.width())),
+                         static_cast<std::uint32_t>(std::max(1, bounds.height())));
++    eis_region_set_physical_scale(region, 1.0);
+     eis_region_add(region);
+     eis_region_unref(region);
+ }
+-
+-int wheelStep(double delta) {
+-    if (!std::isfinite(delta) || delta == 0.0)
+-        return 0;
+-    return delta > 0.0 ? 1 : -1;
+-}
+-
+ } // namespace
+ 
+ EisInputBridge::EisInputBridge(WaylandInput& input, QObject* parent)
+@@ -205,6 +199,7 @@ void EisInputBridge::handleEvent(eis_event* event) {
+     case EIS_EVENT_CLIENT_DISCONNECT:
+         handleClientDisconnect(eis_event_get_client(event));
+         break;
++    case EIS_EVENT_SEAT_DEVICE_REQUESTED:
+     case EIS_EVENT_SEAT_BIND:
+         handleSeatBind(event);
+         break;
+@@ -224,6 +219,9 @@ void EisInputBridge::handleEvent(eis_event* event) {
+     case EIS_EVENT_FRAME:
+     case EIS_EVENT_DEVICE_START_EMULATING:
+     case EIS_EVENT_DEVICE_STOP_EMULATING:
++    case EIS_EVENT_DEVICE_READY:
++    case EIS_EVENT_TEXT_KEYSYM:
++    case EIS_EVENT_TEXT_UTF8:
+     case EIS_EVENT_PONG:
+     case EIS_EVENT_SCROLL_CANCEL:
+     case EIS_EVENT_TOUCH_DOWN:
+@@ -316,18 +314,15 @@ void EisInputBridge::handleInputEvent(eis_event* event) {
+         m_input.pointerButton(eis_event_button_get_button(event), eis_event_button_get_is_press(event));
+         break;
+     case EIS_EVENT_SCROLL_DELTA:
+-        if (const int x = wheelStep(eis_event_scroll_get_dx(event)); x != 0)
+-            m_input.pointerAxisDiscrete(1, x);
+-        if (const int y = wheelStep(-eis_event_scroll_get_dy(event)); y != 0)
+-            m_input.pointerAxisDiscrete(0, y);
++        m_input.pointerAxis(eis_event_scroll_get_dx(event), eis_event_scroll_get_dy(event));
+         break;
+     case EIS_EVENT_SCROLL_DISCRETE: {
+         const int x = eis_event_scroll_get_discrete_dx(event);
+         const int y = eis_event_scroll_get_discrete_dy(event);
+         if (x != 0)
+-            m_input.pointerAxisDiscrete(1, x);
++            m_input.pointerAxisDiscrete(1, x / 120);
+         if (y != 0)
+-            m_input.pointerAxisDiscrete(0, -y);
++            m_input.pointerAxisDiscrete(0, y / 120);
+         break;
+     }
+     case EIS_EVENT_SCROLL_STOP:
+@@ -395,6 +390,8 @@ eis_device* EisInputBridge::addAbsolutePointer(eis_seat* seat) {
+     eis_device_configure_type(device, EIS_DEVICE_TYPE_VIRTUAL);
+     eis_device_configure_name(device, "hypr-kdeconnect absolute pointer");
+     eis_device_configure_capability(device, EIS_DEVICE_CAP_POINTER_ABSOLUTE);
++    eis_device_configure_capability(device, EIS_DEVICE_CAP_BUTTON);
++    eis_device_configure_capability(device, EIS_DEVICE_CAP_SCROLL);
+     configureRegion(device, m_input.logicalBounds());
+     eis_device_add(device);
+     eis_device_resume(device);
+diff --git a/src/keyboard_modifiers.hpp b/src/keyboard_modifiers.hpp
+new file mode 100644
+index 0000000..d2b2f13
+--- /dev/null
++++ b/src/keyboard_modifiers.hpp
+@@ -0,0 +1,26 @@
++#pragma once
++
++#include <cstdint>
++#include <xkbcommon/xkbcommon.h>
++
++namespace hkcf {
++
++struct KeyboardModifiers {
++    xkb_mod_mask_t depressed;
++    xkb_mod_mask_t latched;
++    xkb_mod_mask_t locked;
++    xkb_layout_index_t group;
++};
++
++// libei and virtual-keyboard use evdev codes; xkbcommon adds eight.
++inline KeyboardModifiers updateKeyboardModifiers(xkb_state* state, std::uint32_t keycode, bool pressed) {
++    xkb_state_update_key(state, keycode + 8, pressed ? XKB_KEY_DOWN : XKB_KEY_UP);
++    return {
++        xkb_state_serialize_mods(state, XKB_STATE_MODS_DEPRESSED),
++        xkb_state_serialize_mods(state, XKB_STATE_MODS_LATCHED),
++        xkb_state_serialize_mods(state, XKB_STATE_MODS_LOCKED),
++        xkb_state_serialize_layout(state, XKB_STATE_LAYOUT_EFFECTIVE),
++    };
++}
++
++} // namespace hkcf
+diff --git a/src/wayland_input.cpp b/src/wayland_input.cpp
+index 979679a..cbf455d 100644
+--- a/src/wayland_input.cpp
++++ b/src/wayland_input.cpp
+@@ -1,6 +1,7 @@
+ #include "wayland_input.hpp"
+ 
+ #include "security_policy.hpp"
++#include "keyboard_modifiers.hpp"
+ 
+ #include <algorithm>
+ #include <cerrno>
+@@ -210,10 +211,14 @@ bool WaylandInput::sendKeyboardKeymap() {
+     }
+ 
+     char* keymapText = xkb_keymap_get_as_string(keymap, XKB_KEYMAP_FORMAT_TEXT_V1);
++    if (m_keyboardState)
++        xkb_state_unref(m_keyboardState);
++    m_keyboardState = xkb_state_new(keymap);
+     xkb_keymap_unref(keymap);
+     xkb_context_unref(context);
+ 
+-    if (!keymapText) {
++    if (!keymapText || !m_keyboardState) {
++        free(keymapText);
+         setError(QStringLiteral("failed to serialize xkb keymap"));
+         return false;
+     }
+@@ -353,6 +358,11 @@ bool WaylandInput::keyboardKeycode(std::uint32_t keycode, bool pressed) {
+         return false;
+ 
+     zwp_virtual_keyboard_v1_key(m_keyboard, timeMs(), keycode, pressed ? kKeyboardKeyPressed : kKeyboardKeyReleased);
++    if (m_keyboardState) {
++        const auto mods = updateKeyboardModifiers(m_keyboardState, keycode, pressed);
++        zwp_virtual_keyboard_v1_modifiers(m_keyboard,
++            mods.depressed, mods.latched, mods.locked, mods.group);
++    }
+     return flush();
+ }
+ 
+@@ -409,9 +419,12 @@ std::uint32_t WaylandInput::timeMs() const {
+ }
+ 
+ QRect WaylandInput::outputBounds() const {
+-    if (m_outputInfo.width > 0 && m_outputInfo.height > 0)
+-        return {m_outputInfo.x, m_outputInfo.y, m_outputInfo.width, m_outputInfo.height};
+-    return {0, 0, 1920, 1080};
++    QRect bounds;
++    for (const auto& output : m_outputs) {
++        if (output.width > 0 && output.height > 0)
++            bounds = bounds.united(QRect(output.x, output.y, output.width, output.height));
++    }
++    return bounds.isEmpty() ? QRect(0, 0, 1920, 1080) : bounds;
+ }
+ 
+ bool WaylandInput::flush() {
+@@ -444,9 +457,12 @@ void WaylandInput::cleanup() {
+         zwlr_virtual_pointer_manager_v1_destroy(m_virtualPointerManager);
+         m_virtualPointerManager = nullptr;
+     }
+-    if (m_output) {
+-        wl_output_destroy(m_output);
+-        m_output = nullptr;
++    for (auto* output : m_outputs.keys())
++        wl_output_destroy(output);
++    m_outputs.clear();
++    if (m_keyboardState) {
++        xkb_state_unref(m_keyboardState);
++        m_keyboardState = nullptr;
+     }
+     if (m_seat) {
+         wl_seat_destroy(m_seat);
+@@ -481,10 +497,12 @@ void WaylandInput::handleGlobal(void* data, wl_registry* registry, std::uint32_t
+         self->m_keyboardManagerVersion = std::min<std::uint32_t>(version, 1);
+         self->m_virtualKeyboardManager =
+             static_cast<zwp_virtual_keyboard_manager_v1*>(wl_registry_bind(registry, name, &zwp_virtual_keyboard_manager_v1_interface, self->m_keyboardManagerVersion));
+-    } else if (iface == QStringLiteral("wl_output") && !self->m_output) {
+-        self->m_output = static_cast<wl_output*>(wl_registry_bind(registry, name, &wl_output_interface, std::min<std::uint32_t>(version, 4)));
+-        if (self->m_output)
+-            wl_output_add_listener(self->m_output, &kOutputListener, self);
++    } else if (iface == QStringLiteral("wl_output")) {
++        auto* output = static_cast<wl_output*>(wl_registry_bind(registry, name, &wl_output_interface, std::min<std::uint32_t>(version, 4)));
++        if (output) {
++            self->m_outputs.insert(output, OutputInfo{});
++            wl_output_add_listener(output, &kOutputListener, self);
++        }
+     }
+ }
+ 
+@@ -492,7 +510,7 @@ void WaylandInput::handleGlobalRemove(void*, wl_registry*, std::uint32_t) {
+ }
+ 
+ void WaylandInput::outputGeometry(void* data,
+-                                  wl_output*,
++                                  wl_output* output,
+                                   int32_t x,
+                                   int32_t y,
+                                   int32_t,
+@@ -502,16 +520,16 @@ void WaylandInput::outputGeometry(void* data,
+                                   const char*,
+                                   int32_t) {
+     auto* self = static_cast<WaylandInput*>(data);
+-    self->m_outputInfo.x = x;
+-    self->m_outputInfo.y = y;
++    self->m_outputs[output].x = x;
++    self->m_outputs[output].y = y;
+ }
+ 
+-void WaylandInput::outputMode(void* data, wl_output*, std::uint32_t flags, int32_t width, int32_t height, int32_t) {
++void WaylandInput::outputMode(void* data, wl_output* output, std::uint32_t flags, int32_t width, int32_t height, int32_t) {
+     if (!(flags & WL_OUTPUT_MODE_CURRENT))
+         return;
+     auto* self = static_cast<WaylandInput*>(data);
+-    self->m_outputInfo.width = width;
+-    self->m_outputInfo.height = height;
++    self->m_outputs[output].width = width;
++    self->m_outputs[output].height = height;
+ }
+ 
+ void WaylandInput::outputDone(void*, wl_output*) {
+diff --git a/src/wayland_input.hpp b/src/wayland_input.hpp
+index 516b953..76c89ed 100644
+--- a/src/wayland_input.hpp
++++ b/src/wayland_input.hpp
+@@ -75,17 +75,18 @@ class WaylandInput {
+     void cleanup();
+     void setError(const QString& error);
+ 
++    xkb_state* m_keyboardState = nullptr;
+     wl_display* m_display = nullptr;
+     wl_registry* m_registry = nullptr;
+     wl_seat* m_seat = nullptr;
+-    wl_output* m_output = nullptr;
++    QHash<wl_output*, OutputInfo> m_outputs;
+     zwlr_virtual_pointer_manager_v1* m_virtualPointerManager = nullptr;
+     zwp_virtual_keyboard_manager_v1* m_virtualKeyboardManager = nullptr;
+     zwlr_virtual_pointer_v1* m_pointer = nullptr;
+     zwp_virtual_keyboard_v1* m_keyboard = nullptr;
+     std::uint32_t m_pointerManagerVersion = 1;
+     std::uint32_t m_keyboardManagerVersion = 1;
+-    OutputInfo m_outputInfo;
++
+     QElapsedTimer m_timer;
+     QString m_lastError;
+     KeyResolver m_keyResolver;
+diff --git a/tests/keyboard_modifiers_test.cpp b/tests/keyboard_modifiers_test.cpp
+new file mode 100644
+index 0000000..1ea74da
+--- /dev/null
++++ b/tests/keyboard_modifiers_test.cpp
+@@ -0,0 +1,42 @@
++#include "keyboard_modifiers.hpp"
++
++#include <cstdlib>
++#include <iostream>
++#include <linux/input-event-codes.h>
++
++int main() {
++    auto* context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
++    const xkb_rule_names names{.rules = nullptr, .model = nullptr, .layout = "us", .variant = nullptr, .options = nullptr};
++    auto* keymap = xkb_keymap_new_from_names(context, &names, XKB_KEYMAP_COMPILE_NO_FLAGS);
++    auto* state = keymap ? xkb_state_new(keymap) : nullptr;
++    if (!state)
++        return EXIT_FAILURE;
++
++    int failures = 0;
++    auto expect = [&](bool condition, const char* message) {
++        if (!condition) {
++            std::cerr << message << '\n';
++            ++failures;
++        }
++    };
++    const auto shift = 1u << xkb_keymap_mod_get_index(keymap, XKB_MOD_NAME_SHIFT);
++    const auto ctrl = 1u << xkb_keymap_mod_get_index(keymap, XKB_MOD_NAME_CTRL);
++    const auto caps = 1u << xkb_keymap_mod_get_index(keymap, XKB_MOD_NAME_CAPS);
++    auto mods = hkcf::updateKeyboardModifiers(state, KEY_LEFTSHIFT, true);
++    expect((mods.depressed & shift) != 0, "Shift must become active on evdev press");
++    mods = hkcf::updateKeyboardModifiers(state, KEY_LEFTCTRL, true);
++    expect((mods.depressed & (shift | ctrl)) == (shift | ctrl), "Ctrl+Shift must retain both modifiers");
++    mods = hkcf::updateKeyboardModifiers(state, KEY_LEFTSHIFT, false);
++    expect((mods.depressed & shift) == 0 && (mods.depressed & ctrl) != 0, "releasing Shift must preserve Ctrl");
++    mods = hkcf::updateKeyboardModifiers(state, KEY_LEFTCTRL, false);
++    expect(mods.depressed == 0, "released modifiers must not stick");
++    hkcf::updateKeyboardModifiers(state, KEY_CAPSLOCK, true);
++    mods = hkcf::updateKeyboardModifiers(state, KEY_CAPSLOCK, false);
++    expect((mods.locked & caps) != 0, "Caps Lock must survive release as locked, not depressed");
++    expect(mods.depressed == 0, "Caps Lock release must clear depressed state");
++
++    xkb_state_unref(state);
++    xkb_keymap_unref(keymap);
++    xkb_context_unref(context);
++    return failures ? EXIT_FAILURE : EXIT_SUCCESS;
++}
+-- 
+2.56.0
+

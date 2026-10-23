@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Clipboard and primary-selection sharing for one Synergy pair over Tailscale SSH.
+"""Clipboard and primary-selection sharing for one Synergy pair over SSH.
 
 Clipboard payloads stay in memory. stdout is the remote wire protocol; diagnostics
 go to stderr and never include clipboard contents. Both Wayland selections share.
@@ -37,8 +37,12 @@ def load_config(path):
     with open(path, "rb") as source:
         config = tomllib.load(source)
     expected = {"remote_host", "remote_script", "peer_id", "initial_sync"}
-    if set(config) != expected:
-        raise ValueError("config requires remote_host, remote_script, peer_id and initial_sync only")
+    if not expected.issubset(config) or set(config) - expected - {"transport"}:
+        raise ValueError("config requires remote_host, remote_script, peer_id and initial_sync; transport is optional")
+    # Preserve the tested transport for existing configurations.
+    config.setdefault("transport", "tailscale")
+    if config["transport"] not in ("ssh", "tailscale"):
+        raise ValueError("transport must be ssh or tailscale")
     if not isinstance(config["remote_host"], str) or not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.@:-]*", config["remote_host"]):
         raise ValueError("invalid remote_host")
     remote_script = config["remote_script"]
@@ -52,10 +56,19 @@ def load_config(path):
 
 
 def remote_command(config):
-    # Tailscale SSH invokes a remote shell: quote every remote argument as well
+    # Both transports invoke a remote shell: quote every remote argument as well
     # as using an argv list locally. Installation paths may contain spaces.
-    return ["/usr/bin/tailscale", "ssh", config["remote_host"],
-            shlex.join(["/usr/bin/python3", config["remote_script"], "remote"])]
+    remote = shlex.join(["/usr/bin/python3", config["remote_script"], "remote"])
+    transport = config.get("transport", "tailscale")
+    if transport == "tailscale":
+        return ["/usr/bin/tailscale", "ssh", config["remote_host"], remote]
+    if transport == "ssh":
+        return ["/usr/bin/ssh", "-T", "-oBatchMode=yes",
+                "-oStrictHostKeyChecking=yes", "-oPasswordAuthentication=no",
+                "-oKbdInteractiveAuthentication=no", "-oConnectTimeout=10",
+                "-oServerAliveInterval=15", "-oServerAliveCountMax=3",
+                "--", config["remote_host"], remote]
+    raise ValueError("transport must be ssh or tailscale")
 
 
 def parse_message(line):

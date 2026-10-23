@@ -1,0 +1,2 @@
+# Preserve unified-diff context prefixes and format-patch trailers verbatim.
+patches/input-bridge/*.patch -whitespace

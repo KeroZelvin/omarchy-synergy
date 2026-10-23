@@ -55,8 +55,39 @@ class ProtocolTests(unittest.TestCase):
 
     def test_remote_path_is_one_quoted_shell_argument(self):
         path = "/home/a user/clipboard;echo bad/relay.py"
-        argv = relay.remote_command({"remote_host": "user@peer", "remote_script": path})
-        self.assertEqual(shlex.split(argv[-1]), ["/usr/bin/python3", path, "remote"])
+        for transport in ("tailscale", "ssh"):
+            with self.subTest(transport=transport):
+                argv = relay.remote_command({"remote_host": "user@peer", "remote_script": path, "transport": transport})
+                self.assertEqual(shlex.split(argv[-1]), ["/usr/bin/python3", path, "remote"])
+
+    def test_openssh_uses_noninteractive_verified_connection(self):
+        argv = relay.remote_command({"remote_host": "peer-alias", "remote_script": "/home/user/relay.py", "transport": "ssh"})
+        self.assertEqual(argv[0], "/usr/bin/ssh")
+        self.assertIn("-T", argv)
+        self.assertIn("-oBatchMode=yes", argv)
+        self.assertIn("-oStrictHostKeyChecking=yes", argv)
+        self.assertIn("-oServerAliveInterval=15", argv)
+        self.assertEqual(argv[-3:-1], ["--", "peer-alias"])
+
+    def test_existing_config_keeps_tailscale_transport(self):
+        sample = (Path(__file__).resolve().parents[1] / "config.example.toml").read_text()
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "config.toml"
+            path.write_text(sample.replace('transport = "ssh"\n', ''))
+            config = relay.load_config(path)
+            self.assertEqual(config["transport"], "tailscale")
+            self.assertEqual(relay.remote_command(config)[:3], ["/usr/bin/tailscale", "ssh", "your-user@your-peer"])
+
+    def test_invalid_transport_is_rejected(self):
+        sample = (Path(__file__).resolve().parents[1] / "config.example.toml").read_text()
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "config.toml"
+            for value in ('"custom-command"', '[]', 'false'):
+                path.write_text(sample.replace('transport = "ssh"', 'transport = ' + value))
+                with self.subTest(value=value), self.assertRaises(ValueError):
+                    relay.load_config(path)
+        with self.assertRaises(ValueError):
+            relay.remote_command({"remote_host": "peer", "remote_script": "/relay.py", "transport": "other"})
 
     def test_config_rejects_unknown_fields_and_invalid_hosts(self):
         sample = (Path(__file__).resolve().parents[1] / "config.example.toml").read_text()
@@ -64,7 +95,8 @@ class ProtocolTests(unittest.TestCase):
             path = Path(temp) / "config.toml"
             path.write_text(sample)
             self.assertEqual(relay.load_config(path)["initial_sync"], "none")
-            for content in [sample + '\nextra = true\n', sample.replace("your-user@your-tailscale-peer", "-oProxyCommand=bad"), sample.replace('initial_sync = "none"', 'initial_sync = "yes"')]:
+            self.assertEqual(relay.load_config(path)["transport"], "ssh")
+            for content in [sample + '\nextra = true\n', sample.replace("your-user@your-peer", "-oProxyCommand=bad"), sample.replace('initial_sync = "none"', 'initial_sync = "yes"')]:
                 path.write_text(content)
                 with self.assertRaises(ValueError):
                     relay.load_config(path)
