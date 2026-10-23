@@ -21,6 +21,7 @@ Panel {
   property string activeJob: ""
   property string jobAction: ""
   property var queuedRequest: null
+  readonly property bool actionBusy: activeJob !== "" || queuedRequest !== null || (busy && pending !== "status")
   property string errorText: ""
   property string message: ""
   property var summary: ({ role: "unconfigured", state: "loading" })
@@ -54,7 +55,7 @@ Panel {
     data.action = action
     payload = JSON.stringify(data)
     busy = true
-    errorText = ""
+    if (action !== "status") errorText = ""
     rpc.command = ["/usr/bin/python3", backendPath, "rpc"]
     rpc.running = true
     return true
@@ -77,7 +78,7 @@ Panel {
   function checkSource() { preview = ({}); request("check_source", sourceValues()) }
   function reviewReceiver() { preview = ({}); request("receiver_preview", { max_mib: limit.value }) }
   function confirmReview() {
-    if (!preview.token || busy) return
+    if (!preview.token || actionBusy) return
     var values = step === "source-review" ? sourceValues() : { max_mib: limit.value }
     values.token = preview.token
     values.confirm = true
@@ -227,7 +228,7 @@ Panel {
           }
           Copy { visible: root.errorText !== ""; text: root.errorText; color: Commons.Color.urgent }
           Copy { visible: root.message !== ""; text: root.message }
-          BusyIndicator { visible: root.busy; running: root.busy; Layout.alignment: Qt.AlignHCenter }
+          BusyIndicator { visible: root.actionBusy; running: root.actionBusy; Layout.alignment: Qt.AlignHCenter }
 
           ColumnLayout {
             visible: root.step === "home"
@@ -297,7 +298,7 @@ Panel {
               text: "Replace the receiver's selections on each new connection"
               checked: false
             }
-            Action { text: "Check connection and review"; primary: true; enabled: !root.busy && host.text.trim() !== "" && peer.currentIndex >= 0; onClicked: root.checkSource() }
+            Action { text: "Check connection and review"; primary: true; enabled: !root.actionBusy && host.text.trim() !== "" && peer.currentIndex >= 0; onClicked: root.checkSource() }
           }
 
           RowLayout {
@@ -314,7 +315,7 @@ Panel {
             Copy { text: root.preview.changes || "" }
             Copy { text: "Image/text limit for the pair: " + (root.preview.max_mib || 8) + " MiB. The receiving setting synchronizes automatically." }
             Copy { text: "SSH, host identity, companion version, Synergy peer identity and Wayland data-control checks must pass. No input-bridge or portal settings are changed by this wizard."; font.pixelSize: Style.font.bodySmall }
-            Action { text: root.step === "receiver-review" ? "Prepare receiver" : "Save pairing and enable"; primary: true; enabled: !root.busy && !!root.preview.token; onClicked: root.confirmReview() }
+            Action { text: root.step === "receiver-review" ? "Prepare receiver" : "Save pairing and enable"; primary: true; enabled: !root.actionBusy && !!root.preview.token; onClicked: root.confirmReview() }
           }
           Action { visible: root.step !== "home"; text: "Cancel / Back"; onClicked: { root.step = "home"; root.preview = ({}) } }
         }
@@ -332,7 +333,7 @@ Panel {
   }
   component Action: Button {
     property bool primary: false
-    enabled: !root.busy
+    enabled: !root.actionBusy
     bordered: true
     focusable: true
     horizontalPadding: Style.space(12)
