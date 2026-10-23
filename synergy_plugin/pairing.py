@@ -74,7 +74,7 @@ def remote_endpoint(transport, host):
     if not shutil.which("ssh" if transport == "ssh" else "tailscale"):
         raise ValueError("The selected SSH transport is not installed.")
     args = relay.remote_command({"transport": transport, "remote_host": host, "remote_script": "/unused"})
-    code = "import runpy,sys;from pathlib import Path;sys.argv=['plugin.py','endpoint'];runpy.run_path(str(Path.home()/'.local/lib/synergy-clipboard/plugin.py'),run_name='__main__')"
+    code = "import runpy,sys;from pathlib import Path;p=Path.home()/'.local/lib/synergy-clipboard/plugin.py';sys.path.insert(0,str(p.parent));sys.argv=['plugin.py','endpoint'];runpy.run_path(str(p),run_name='__main__')"
     args[-1] = shlex.join(["/usr/bin/python3", "-c", code])
     result = runtime.run(args, timeout=25)
     if result.returncode:

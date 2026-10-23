@@ -160,6 +160,7 @@ Panel {
     function resume(): void { root.request("resume") }
     function reconnect(): void { root.request("reconnect") }
     function state(): string { return JSON.stringify({ step: root.step, busy: root.busy, state: root.summary.state || "", role: root.summary.role || "", error: root.errorText, review: !!root.preview.token, max_mib: root.preview.max_mib || root.summary.max_mib || 8 }) }
+    function geometry(): string { return JSON.stringify({ screen: popup.screen ? popup.screen.name : "", x: popup.cardOrigin.x, y: popup.cardOrigin.y, width: popup.contentWidth, height: popup.contentHeight }) }
   }
 
   BarIconButton {
