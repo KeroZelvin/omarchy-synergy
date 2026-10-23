@@ -1,7 +1,7 @@
-From dc91c15d1e952b5d49bd6f506a6af64ef2479cbe Mon Sep 17 00:00:00 2001
-From: Local review draft <review@example.invalid>
+From bca650744e3f3ca521b5bfd6bd8ba7ce35189f6f Mon Sep 17 00:00:00 2001
+From: KeroZelvin <147951788+KeroZelvin@users.noreply.github.com>
 Date: Fri, 23 Oct 2026 12:36:01 -0700
-Subject: [PATCH 2/3] Handle libeis 1.6 input and preserve virtual keyboard
+Subject: [PATCH] Handle libeis 1.6 input and preserve virtual keyboard
  modifiers
 
 ---

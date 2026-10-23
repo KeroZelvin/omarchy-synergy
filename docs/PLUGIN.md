@@ -15,7 +15,13 @@ Both modes encrypt clipboard traffic. Only the source needs SSH access to the re
 
 ## Install the plugin
 
-After a public repository exists, add its Git URL through **Setup → Plugins → Add**, review it, and enable it. The equivalent is `omarchy plugin add REPOSITORY_URL --enable`, replacing the URL with the reviewed project location. No public URL has been assigned to this review candidate.
+Review [the experimental 0.1.0 project](https://github.com/KeroZelvin/omarchy-synergy), then add its Git URL through **Setup → Plugins → Add** and enable it. The command-line equivalent is:
+
+```bash
+omarchy plugin add https://github.com/KeroZelvin/omarchy-synergy.git --enable
+```
+
+Install the same revision on both computers. This command becomes usable once the repository is published; the local review candidate can be installed as follows.
 
 For a local Git checkout, run this from its root on each computer:
 

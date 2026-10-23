@@ -8,7 +8,7 @@ Apply in order:
 2. `0002-eis-input.patch`: libeis 1.6 input handling, pointer capabilities, modifier propagation and static multi-output bounds.
 3. `0003-keyboard-transitions.patch`: suppress duplicate key-down/unmatched-release transitions to prevent stuck modifiers, including the Shift/Codex regression.
 
-The first patch forms one proposed upstream PR; the second and third form the other. They are local review candidates, not published or accepted upstream. Patch headers currently retain the local draft author identity; settle public authorship before submitting them.
+The first patch forms one proposed upstream PR; the second and third form the other. They are local review candidates, not published or accepted upstream. Patch headers use the owner's established public Git identity. Original upstream authorship and MIT notices are preserved.
 
 From the omarchy-synergy repository root:
 

@@ -1,8 +1,7 @@
-From 5ce1b229362bec7716817851f8d3181da3105507 Mon Sep 17 00:00:00 2001
-From: Local review draft <review@example.invalid>
+From 52a384fa8e67baceaf3f2e8012c04c9099445ff1 Mon Sep 17 00:00:00 2001
+From: KeroZelvin <147951788+KeroZelvin@users.noreply.github.com>
 Date: Fri, 23 Oct 2026 13:14:53 -0700
-Subject: [PATCH 3/3] Ignore duplicate keyboard transitions to prevent stuck
- Shift
+Subject: [PATCH] Ignore duplicate keyboard transitions to prevent stuck Shift
 
 ---
  CMakeLists.txt                    |  6 ++++

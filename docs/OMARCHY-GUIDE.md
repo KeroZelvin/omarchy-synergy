@@ -88,7 +88,9 @@ Test edge crossing, clicks, typing, modifier keys, scrolling, every receiving mo
 
 ## 5. Add optional clipboard sharing
 
-Use [the plugin wizard](PLUGIN.md) or follow [the manual companion setup](clipboard.md). It requires Python 3.11+, wl-clipboard, and a working trusted OpenSSH or Tailscale SSH route between the two active Wayland sessions. Install the same companion version on both computers, configure the remote host, remote script path and Synergy peer ID only on the input source, and test it in the foreground before enabling its user service.
+Use [the experimental 0.1.0 plugin wizard](PLUGIN.md), preparing the receiver before pairing the source. Both computers need Python 3.11+, wl-clipboard and active Wayland sessions, with a working trusted OpenSSH or Tailscale SSH route from source to receiver. Install the same revision on both computers.
+
+For a shell-independent installation, follow [the manual companion setup](clipboard.md). Configure the remote host, remote script path and Synergy peer ID only on the input source, then test in the foreground before enabling its user service.
 
 The regular clipboard and primary selection are separate. Copy/paste normally uses the regular clipboard; in many terminals Ctrl+Shift+C/V does that. Highlighting text and middle-clicking uses the primary selection. Shift+Insert behavior depends on the application. Test both selections explicitly. This setup does not implement a native portal Clipboard interface and does not advertise one.
 
@@ -104,7 +106,9 @@ The [Omarchy plugin and two-device pairing wizard](PLUGIN.md) provide receiver p
 
 ## Validation and rollback
 
-The installed prototype passed bidirectional text/PNG transfer, primary-selection isolation, Synergy pause gating and reconnect checks. The owner confirmed mouse, typing, scrolling, both receiving monitors, return crossing and middle-click paste. The cleaned bridge (including repeated-key/Shift correction) and configurable companion have since been activated on the test pair with rollback copies. Bridge checks pass 6/6 and clipboard checks 13/13 on each computer; cross-machine text/PNG, primary selection, pause/resume and reconnect checks pass. The owner has confirmed fresh input/Codex-Shift acceptance; see [the baseline acceptance report](ACCEPTANCE.md) and [current validation](VALIDATION.md) for the later OpenSSH transport addition. Reboot persistence and long-running behavior have not been validated.
+The accepted input bridge passed six checks on each computer. The owner confirmed mouse movement, typing, scrolling, both receiving monitors, return crossing, middle-click paste and the Shift/Codex correction. See [the historical acceptance report](ACCEPTANCE.md) for that baseline.
+
+The current plugin/companion passes 38 isolated tests on each computer. Live text, PNG and independent PRIMARY transfers passed in both directions over both OpenSSH and Tailscale SSH, along with persistent pause, Synergy gating, reconnect and widget lifecycle checks. The owner confirmed pair-wide size changes and steady panels. See [current validation](VALIDATION.md) for actual payload sizes and remaining limits. Full 128 MiB payloads, reboot persistence and long-running behavior have not been validated.
 
 To roll back, disable the clipboard companion, remove only its installed user files, restore the backed-up portal configuration, remove the bridge's installed user-local binary/metadata and optional caller-verification override, then reload the user manager and restart the portal frontend. Do this during a planned pause in sharing; portal restarts can interrupt screen sharing or other portal sessions. Keep the keyboard and mouse physically available on each computer while changing the setup.
 

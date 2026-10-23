@@ -1,6 +1,6 @@
 # Validation and limits
 
-## Plugin candidate — 23 October 2026
+## Experimental 0.1.0 candidate — 23 October 2026
 
 The native Omarchy plugin, receiver-first pairing wizard and independent clipboard service were installed and tested on two authorized computers. Both Direct LAN (OpenSSH) and Tailscale SSH pairing completed through the panel's own QML handlers. Installation, update, disable/enable, shell restart and receiver widget removal/reinstallation were exercised through native Omarchy commands. Manifest validation passes on both computers.
 
@@ -16,7 +16,7 @@ Pair-wide limits synchronized from the source at 128 MiB, from the receiver at 3
 
 Acceptance found and corrected a frozen 8 MiB clipboard-capture default, a native Omarchy button API mismatch and clicks dropped during status polling. Background polling subsequently received a visual fix to avoid dimming controls/showing a busy spinner on every refresh. Idle geometry remained constant during sampling on both computers, and the owner confirmed both panels stay steady after the fix.
 
-The final working pair uses Direct LAN SSH with existing pinned trust. The Synergy input bridge, layout, account settings, SSH trust and router configuration were retained. Public authorship and publication remain pending review; no upstream submission has been made.
+The final working pair uses Direct LAN SSH with existing pinned trust. The Synergy input bridge, layout, account settings, SSH trust and router configuration were retained. The candidate uses the owner's established public Git identity. Publication remains pending review; no upstream submission has been made.
 
 ## Input bridge and historical acceptance
 
