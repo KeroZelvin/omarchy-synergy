@@ -6,7 +6,7 @@ An experimental companion for one pair of Linux Wayland computers running Synerg
 
 Requires Python 3.11+, `wl-clipboard` with data-control support in the active compositor, systemd user sessions, Tailscale, and already working, verified, noninteractive `tailscale ssh USER@PEER`. Install the same companion version on both computers. The input-source computer runs the coordinator; it starts the other endpoint over SSH. Only one pair per user session is supported. The remote endpoint needs an active Wayland session and `WAYLAND_DISPLAY` in its systemd user environment.
 
-The installed prototype was tested with Synergy 3.8.4, Omarchy 4.0.6, Hyprland 0.56.2, Python 3.14 and wl-clipboard 2.3. Text, Unicode, multiline text and PNG transfers worked in both directions; reconnect, pause gating and independent primary selection were checked. The owner confirmed middle-click paste from the input source onto the second computer. The configurable version in this repository has isolated automated tests; it has not replaced that working prototype or received a new two-machine acceptance run.
+Tested with Synergy 3.8.4, Omarchy 4.0.6, Hyprland 0.56.2, Python 3.14 and wl-clipboard 2.3. The configurable version passes 13 isolated tests on each test computer and real cross-machine Unicode/multiline text, PNG, primary-selection isolation, pause/resume, coordinator restart and receiving-endpoint restart checks. It is running on the accepted test pair with rollback copies retained. The owner also confirmed input and Shift/Codex behavior with the accompanying bridge. Reboot persistence and a long soak have not been tested.
 
 ## What gets shared
 
