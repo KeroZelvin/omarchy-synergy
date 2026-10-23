@@ -20,6 +20,7 @@ Panel {
   property string payload: ""
   property string activeJob: ""
   property string jobAction: ""
+  property var queuedRequest: null
   property string errorText: ""
   property string message: ""
   property var summary: ({ role: "unconfigured", state: "loading" })
@@ -41,7 +42,13 @@ Panel {
   }
 
   function request(action, values) {
-    if (rpc.running) return false
+    if (activeJob && action !== "job") return false
+    if (rpc.running) {
+      if (action === "status") return false
+      queuedRequest = { action: action, values: values }
+      busy = true
+      return true
+    }
     pending = action
     var data = values || {}
     data.action = action
@@ -88,7 +95,7 @@ Panel {
     }
     var action = activeJob ? jobAction : pending
     activeJob = ""
-    busy = false
+    busy = queuedRequest !== null
     if (result.ok !== true) { errorText = result.error || "Setup could not complete."; preview = ({}); return }
     if (action === "receiver_preview" || action === "check_source") {
       preview = result
@@ -122,6 +129,11 @@ Panel {
     stderr: StdioCollector { }
     onExited: function(code, status) {
       if (code !== 0) { root.busy = false; root.activeJob = ""; root.errorText = "The companion could not run. Open Setup to check the installation." }
+      if (root.queuedRequest) Qt.callLater(function() {
+        var next = root.queuedRequest
+        root.queuedRequest = null
+        root.request(next.action, next.values)
+      })
     }
   }
 
