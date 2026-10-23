@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "community.omarchy-synergy",
+  "name": "Synergy",
+  "version": "0.1.0",
+  "author": "omarchy-synergy contributors",
+  "license": "MIT",
+  "description": "Synergy clipboard status, pause controls and pairing over Direct LAN (SSH) or Tailscale (SSH).",
+  "kinds": ["bar-widget"],
+  "entryPoints": {"barWidget": "Panel.qml"},
+  "barWidget": {
+    "displayName": "Synergy",
+    "category": "Network",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

@@ -2,6 +2,9 @@
 # "ssh": existing trusted, noninteractive OpenSSH (LAN or VPN).
 # "tailscale": Tailscale SSH. Omission keeps the original Tailscale behavior.
 transport = "ssh"
+# Decoded text/image limit. Effective limit is the smaller endpoint setting.
+# Whole MiB from 1 to 128; omitted means 8 MiB.
+max_mib = 8
 remote_host = "your-user@your-peer"
 remote_script = "/home/your-user/.local/lib/synergy-clipboard/relay.py"
 # From the peer's entry in Synergy's local settings API (not a password).

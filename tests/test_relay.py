@@ -167,7 +167,7 @@ class InstallTests(unittest.TestCase):
     def test_remote_install_has_no_service(self):
         with tempfile.TemporaryDirectory() as temp:
             home = Path(temp)
-            self.assertEqual(len(install.install(home, True)), 1)
+            self.assertEqual(len(install.install(home, True)), 2)
             self.assertFalse((home / ".config").exists())
 
 
