@@ -319,30 +319,17 @@ Panel {
     font.pixelSize: Style.font.body
   }
   component Action: Button {
-    id: actionButton
     property bool primary: false
     enabled: !root.busy
-    hoverEnabled: true
-    padding: Style.space(8)
-    leftPadding: Style.space(12)
-    rightPadding: Style.space(12)
-    font.family: Style.font.family
-    font.pixelSize: Style.font.body
-    contentItem: Text {
-      text: actionButton.text
-      font: actionButton.font
-      textFormat: Text.PlainText
-      color: Commons.Color.foreground
-      opacity: actionButton.enabled ? 1 : 0.45
-      horizontalAlignment: Text.AlignHCenter
-      verticalAlignment: Text.AlignVCenter
-    }
-    background: Rectangle {
-      radius: Style.space(5)
-      readonly property color tint: actionButton.primary ? Commons.Color.accent : Commons.Color.foreground
-      color: Qt.rgba(tint.r, tint.g, tint.b, !actionButton.enabled ? 0.04 : actionButton.down ? 0.25 : actionButton.hovered ? 0.18 : actionButton.primary ? 0.14 : 0.09)
-      border.width: actionButton.visualFocus ? 2 : 1
-      border.color: actionButton.visualFocus ? Commons.Color.accent : Qt.rgba(tint.r, tint.g, tint.b, actionButton.enabled ? 0.35 : 0.10)
-    }
+    bordered: true
+    focusable: true
+    horizontalPadding: Style.space(12)
+    verticalPadding: Style.space(8)
+    fontFamily: Style.font.family
+    fontSize: Style.font.body
+    foreground: Commons.Color.foreground
+    readonly property color tint: primary ? Commons.Color.accent : Commons.Color.foreground
+    background: Qt.rgba(tint.r, tint.g, tint.b, primary ? 0.14 : 0.09)
+    opacity: enabled ? 1 : 0.45
   }
 }
