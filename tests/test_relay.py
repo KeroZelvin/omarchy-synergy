@@ -1,0 +1,143 @@
+import asyncio
+import base64
+import json
+import os
+from pathlib import Path
+import shlex
+import tempfile
+import unittest
+from unittest.mock import AsyncMock, patch
+
+import relay
+import install
+
+
+def frame(data=b"hello", selection="clipboard", mime=relay.TEXT):
+    return {"kind": "clipboard", "selection": selection, "mime": mime,
+            "payload": base64.b64encode(data).decode(), "digest": relay.digest(mime, data)}
+
+
+class ProtocolTests(unittest.TestCase):
+    def test_unicode_and_binary_round_trip(self):
+        for data, mime in [("hello\n世界\n".encode(), relay.TEXT), (b"\x89PNG\x00\xff", "image/png")]:
+            for selection in relay.SELECTIONS:
+                message = relay.parse_message(json.dumps(frame(data, selection, mime)).encode())
+                self.assertEqual(relay.decode_clipboard(message), (mime, data))
+
+    def test_invalid_frames_are_rejected(self):
+        bad = [b"[]", b"null", b"{", b'{"kind":"clipboard","selection":"other"}', b'{"kind":"execute"}']
+        for value in bad:
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                relay.parse_message(value)
+
+    def test_unsupported_mime_bad_base64_and_digest(self):
+        for change in [{"mime": "text/html"}, {"payload": "%%%"}, {"digest": "bad"}]:
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                relay.decode_clipboard(frame() | change)
+
+    def test_payload_limit_before_and_after_decode(self):
+        with patch.object(relay, "MAX_LINE", 2048), patch.object(relay, "MAX_BYTES", 4):
+            with self.assertRaises(ValueError):
+                relay.decode_clipboard(frame(b"12345"))
+            with self.assertRaises(ValueError):
+                relay.decode_clipboard(frame() | {"payload": "x" * 2049})
+
+    def test_synergy_gate_fails_closed(self):
+        peer = "a" * 64
+        data = {"coreRunning": True, "performance": {"allow_copy": True}, "screenStatus": {peer: {"core": "connected"}}}
+        self.assertTrue(relay.connection_enabled(data, peer))
+        self.assertFalse(relay.connection_enabled(data, "b" * 64))
+        self.assertFalse(relay.connection_enabled(data | {"coreRunning": False}, peer))
+        self.assertFalse(relay.connection_enabled(data | {"coreRunning": "false"}, peer))
+        self.assertFalse(relay.connection_enabled(data | {"performance": {"allow_copy": False}}, peer))
+        with patch("urllib.request.urlopen", side_effect=OSError("offline")):
+            self.assertFalse(relay.synergy_connected(peer))
+
+    def test_remote_path_is_one_quoted_shell_argument(self):
+        path = "/home/a user/clipboard;echo bad/relay.py"
+        argv = relay.remote_command({"remote_host": "user@peer", "remote_script": path})
+        self.assertEqual(shlex.split(argv[-1]), ["/usr/bin/python3", path, "remote"])
+
+    def test_config_rejects_unknown_fields_and_invalid_hosts(self):
+        sample = (Path(__file__).resolve().parents[1] / "config.example.toml").read_text()
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "config.toml"
+            path.write_text(sample)
+            self.assertEqual(relay.load_config(path)["initial_sync"], "none")
+            for content in [sample + '\nextra = true\n', sample.replace("your-user@your-tailscale-peer", "-oProxyCommand=bad"), sample.replace('initial_sync = "none"', 'initial_sync = "yes"')]:
+                path.write_text(content)
+                with self.assertRaises(ValueError):
+                    relay.load_config(path)
+
+
+class ClipboardTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.env = patch.dict(os.environ, {"XDG_RUNTIME_DIR": self.temp.name})
+        self.env.start()
+
+    async def asyncTearDown(self):
+        self.env.stop()
+        self.temp.cleanup()
+
+    async def test_apply_respects_pause_dedup_and_primary_selection(self):
+        clipboard = relay.Clipboard("remote", AsyncMock(), "primary")
+        write = AsyncMock(return_value=b"")
+        with patch.object(relay, "command", write):
+            await clipboard.apply(frame(selection="primary"))
+            write.assert_not_awaited()
+            clipboard.enabled = True
+            await clipboard.apply(frame(selection="primary"))
+            self.assertEqual(write.await_args.args[0], ["wl-copy", "--primary", "--type", relay.TEXT])
+            self.assertEqual(write.await_args.kwargs["data"], b"hello")
+            await clipboard.apply(frame(selection="primary"))
+            self.assertEqual(write.await_count, 1)
+
+    async def test_pause_while_waiting_for_lock_prevents_write(self):
+        clipboard = relay.Clipboard("remote", AsyncMock())
+        clipboard.enabled = True
+        await clipboard.lock.acquire()
+        with patch.object(relay, "command", AsyncMock()) as write:
+            task = asyncio.create_task(clipboard.apply(frame()))
+            await asyncio.sleep(0)
+            clipboard.enabled = False
+            clipboard.lock.release()
+            await task
+            write.assert_not_awaited()
+
+    async def test_failed_start_closes_already_started_watchers(self):
+        first, second = AsyncMock(), AsyncMock()
+        second.start.side_effect = OSError("watcher failed")
+        with self.assertRaises(OSError):
+            await relay.start_clipboards({"clipboard": first, "primary": second})
+        first.close.assert_awaited_once()
+        second.close.assert_awaited_once()
+
+    async def test_command_limit_and_timeout_kill_child(self):
+        import sys
+        with self.assertRaises(ValueError):
+            await relay.command([sys.executable, "-c", "print('x' * 100)"], limit=5)
+        with self.assertRaises(asyncio.TimeoutError):
+            await relay.command([sys.executable, "-c", "import time; time.sleep(5)"], timeout=0.05)
+
+
+class InstallTests(unittest.TestCase):
+    def test_install_is_private_and_refuses_overwrite(self):
+        with tempfile.TemporaryDirectory() as temp:
+            home = Path(temp)
+            targets = install.install(home)
+            self.assertEqual(targets[1].stat().st_mode & 0o777, 0o600)
+            targets[0].write_text("keep existing file")
+            with self.assertRaises(FileExistsError):
+                install.install(home)
+            self.assertEqual(targets[0].read_text(), "keep existing file")
+
+    def test_remote_install_has_no_service(self):
+        with tempfile.TemporaryDirectory() as temp:
+            home = Path(temp)
+            self.assertEqual(len(install.install(home, True)), 1)
+            self.assertFalse((home / ".config").exists())
+
+
+if __name__ == "__main__":
+    unittest.main()

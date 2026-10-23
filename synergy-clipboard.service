@@ -1,0 +1,19 @@
+[Unit]
+Description=Wayland clipboard companion for one Synergy pair
+After=graphical-session.target synergy-3.service
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/.local/lib/synergy-clipboard/relay.py coordinator --config %h/.config/synergy-clipboard/config.toml
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+StandardOutput=null
+StandardError=journal
+
+[Install]
+WantedBy=graphical-session.target

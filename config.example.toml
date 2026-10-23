@@ -1,0 +1,8 @@
+# Coordinator only. Install relay.py on both computers first.
+remote_host = "your-user@your-tailscale-peer"
+remote_script = "/home/your-user/.local/lib/synergy-clipboard/relay.py"
+# From the peer's entry in Synergy's local settings API (not a password).
+peer_id = "0000000000000000000000000000000000000000000000000000000000000000"
+# "none": transfer only future changes; "source": overwrite the remote's
+# supported clipboard and primary selection once each SSH connection activates.
+initial_sync = "none"
