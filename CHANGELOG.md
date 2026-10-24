@@ -7,7 +7,7 @@
 - Add a bounded, read-only Python data-control reader, installed by both the manual installer and plugin. Requires data-control protocol v2 and exactly one Wayland seat; no additional package or build step. Install matching updated runtimes on both computers.
 - Add private-compositor regression tests for offer replacement, source association, byte limits, timeout, unsupported selections and marker support. Guide edits preserve existing fcitx5/Synergy policy settings, qualify policy licensing and explain receiver-first upgrades.
 
-The existing `v0.2.0` tag is unchanged. Its release remains unpublished pending the guard fix.
+The existing `v0.2.0` tag is unchanged. Its release remains unpublished while the replacement candidate is reviewed.
 
 ## 0.2.0 — experimental
 
