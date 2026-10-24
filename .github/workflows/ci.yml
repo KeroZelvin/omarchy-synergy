@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - codex/github-actions-ci
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  python:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.14']
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Run isolated tests
+        run: |
+          python --version
+          python -m unittest discover -s tests -v
+
+  omarchy-plugin:
+    name: Omarchy plugin validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      # Omarchy v4.0.6, the version used for desktop acceptance.
+      OMARCHY_REVISION: 237f1b4071a0bff2296c6d740ba2b9fd695ebfa0
+      LC_ALL: C
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Install validator dependency
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends jq
+      - name: Run official pinned Omarchy validator
+        run: |
+          curl --fail --show-error --silent --location --retry 3 \
+            "https://raw.githubusercontent.com/omacom/omarchy/${OMARCHY_REVISION}/bin/omarchy-plugin-validate" \
+            --output "$RUNNER_TEMP/omarchy-plugin-validate"
+          bash "$RUNNER_TEMP/omarchy-plugin-validate" .
+
+  input-bridge:
+    name: Input bridge build and CTest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container:
+      image: archlinux:base
+    env:
+      INPUT_BRIDGE_REVISION: ea55f66c8238235983d60d381bf2abe1fed50043
+    steps:
+      - name: Install Arch build and test dependencies
+        run: |
+          pacman -Syu --noconfirm --needed \
+            base-devel cmake git pkgconf qt6-base wayland libxkbcommon libei xkeyboard-config
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Prepare pinned bridge and apply patch series
+        run: |
+          git clone --no-checkout https://github.com/iamnarayana/wayland-kdeconnect-fix.git build/input-bridge
+          git -C build/input-bridge checkout --detach "$INPUT_BRIDGE_REVISION"
+          test "$(git -C build/input-bridge rev-parse HEAD)" = "$INPUT_BRIDGE_REVISION"
+          git -C build/input-bridge apply \
+            "$GITHUB_WORKSPACE/patches/input-bridge/0001-native-caller.patch" \
+            "$GITHUB_WORKSPACE/patches/input-bridge/0002-eis-input.patch" \
+            "$GITHUB_WORKSPACE/patches/input-bridge/0003-keyboard-transitions.patch"
+      - name: Configure and build bridge
+        run: |
+          pkg-config --atleast-version=1.6 libeis-1.0
+          cmake -S build/input-bridge -B build/input-bridge-build \
+            -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+          cmake --build build/input-bridge-build --parallel 2
+      - name: Run bridge tests
+        run: ctest --test-dir build/input-bridge-build --output-on-failure --no-tests=error
