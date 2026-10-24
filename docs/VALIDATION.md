@@ -1,5 +1,15 @@
 # Validation and limits
 
+## Unreleased password-manager guard — 23 October 2026
+
+The guard candidate passes 50 isolated tests on each of the two test computers. It recognizes the KDE sensitive marker, the listed Chromium password-manager extensions and the Proton Pass desktop/web origin. A regression first demonstrated that the desktop origin was missed, then passed after adding the exact HTTPS origin. Similar-looking domains, URL userinfo/path tricks and HTTP do not match. Missing, empty and invalid advertised browser-source metadata are withheld.
+
+Live synthetic copies pass ordinary text, PRIMARY and PNG in both directions. Marked and browser-source secrets remain local by default; the one-shot override sends a regular-clipboard copy with its sensitive marker restored on the receiver. A second secret is withheld after that allowance, PRIMARY never consumes it, reconnect seeding excludes secrets, and the real 60-second expiry passes. Desktop-origin fixtures verify withholding and explicit sharing both ways; ordinary and lookalike origins still transfer.
+
+The owner confirmed a fresh Proton Pass extension copy was blocked and then pasted after the override. A fresh marked copy from the receiving computer also pasted after its override. The actual Proton Pass desktop app supplied recognizable source metadata without a KDE marker; the owner confirmed a fresh desktop copy pasted nothing with the override off. Its first deliberate override Ctrl+V check displayed nothing, although the receiver recorded a nonempty clipboard delivery. Without another copy or allowance, the owner then confirmed the correct desktop value pasted using the fresh test editor’s explicit paste button. Actual desktop blocking and deliberate sharing pass. The owner then clicked inside the same fresh editor and confirmed Ctrl+V appended a second copy. The earlier blank paste was not reproduced in the focused editor; its cause remains unproven. Tests use throwaway data; clipboard contents and keystrokes are not logged or saved.
+
+Both computers run matching runtimes over LAN SSH with a 128 MiB pair limit. Backups and disposable restore checks cover the previous installation. Input receiver, portal routing and native Synergy processes were checked unchanged. This guard is local and unpublished; it does not claim detection of unmarked managers or Firefox copies without source metadata. Already-transferred copies remain pasteable until replaced or cleared; cancelling an allowance does not recall them.
+
 ## Experimental 0.1.0 candidate — 23 October 2026
 
 The native Omarchy plugin, receiver-first pairing wizard and independent clipboard service were installed and tested on two authorized computers. Both Direct LAN (OpenSSH) and Tailscale SSH pairing completed through the panel's own QML handlers. Installation, update, disable/enable, shell restart and receiver widget removal/reinstallation were exercised through native Omarchy commands. Manifest validation passes on both computers.
