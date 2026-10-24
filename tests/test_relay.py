@@ -6,7 +6,7 @@ from pathlib import Path
 import shlex
 import tempfile
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import relay
 import install
@@ -151,6 +151,46 @@ class ClipboardTests(unittest.IsolatedAsyncioTestCase):
             await relay.command([sys.executable, "-c", "print('x' * 100)"], limit=5)
         with self.assertRaises(asyncio.TimeoutError):
             await relay.command([sys.executable, "-c", "import time; time.sleep(5)"], timeout=0.05)
+
+    async def test_handshake_allows_two_large_initial_captures(self):
+        # Scale the handshake clock: a receiver can spend up to 24 seconds
+        # capturing CLIPBOARD and PRIMARY before it sends its hello.
+        accepted = asyncio.Event()
+        never = asyncio.Event()
+        process = MagicMock(returncode=None)
+        process.wait = AsyncMock(return_value=0)
+        process.stdin.drain = AsyncMock()
+        async def read_hello():
+            await asyncio.sleep(0.6)  # 30 seconds including SSH/startup overhead
+            return json.dumps({"kind":"hello", "version":relay.WIRE_VERSION,
+                               "max_bytes":8*1024*1024}).encode() + b"\n"
+        process.stdout.readline = read_hello
+        def clipboard(*args):
+            item = MagicMock()
+            item.start = AsyncMock()
+            item.close = AsyncMock()
+            item.monitor = never.wait
+            return item
+        wait_for = asyncio.wait_for
+        async def scaled_wait(awaitable, timeout):
+            return await wait_for(awaitable, timeout/50 if timeout in (20, 40) else timeout)
+        negotiate = relay.negotiate_limit
+        def ready(*args):
+            negotiate(*args)
+            accepted.set()
+        with patch.object(relay, "Clipboard", clipboard), \
+                patch.object(relay.asyncio, "create_subprocess_exec", AsyncMock(return_value=process)), \
+                patch.object(relay.asyncio, "wait_for", scaled_wait), \
+                patch.object(relay, "negotiate_limit", ready), \
+                patch.object(relay.sharing_state, "publish"), \
+                patch.object(relay, "synergy_connected", return_value=False):
+            task = asyncio.create_task(relay.coordinator({"transport":"ssh", "remote_host":"test",
+                "remote_script":"/relay.py", "peer_id":"a"*64, "initial_sync":"none"}))
+            try:
+                await wait_for(accepted.wait(), 1.2)
+            finally:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
 
 
 class SecretTests(unittest.IsolatedAsyncioTestCase):

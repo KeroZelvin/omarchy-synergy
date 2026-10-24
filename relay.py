@@ -510,7 +510,9 @@ async def coordinator(config):
                 process = await asyncio.create_subprocess_exec(
                     *remote_command(config), stdin=asyncio.subprocess.PIPE,
                     stdout=asyncio.subprocess.PIPE, stderr=None, limit=4*((sharing_state.MAX_MIB*1024*1024+2)//3)+8192)
-                first = await asyncio.wait_for(process.stdout.readline(), 20)
+                # Remote startup snapshots both selections before hello: up to
+                # 12 seconds each, plus SSH/session and watcher startup time.
+                first = await asyncio.wait_for(process.stdout.readline(), 40)
                 hello = parse_message(first)
                 if hello.get("kind") != "hello" or hello.get("version") != WIRE_VERSION:
                     raise RuntimeError("remote handshake failed")

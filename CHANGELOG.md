@@ -4,7 +4,8 @@
 
 - Fix a clipboard capture race in the 0.2.0 password-manager guard. MIME types, browser-source metadata and payload now come from one Wayland data offer. Selection replacement aborts the capture instead of mixing ordinary metadata with a later secret. This applies to regular clipboard, PRIMARY and initial synchronization.
 - Refuse received secrets when `wl-copy --sensitive` is unavailable, instead of writing them without the marker.
-- Give large clipboard reads more time: 8 seconds once a payload passes 32 MiB, 12 seconds past 64 MiB (4 seconds otherwise). A clipboard read failure at startup, including an unreachable compositor or missing runtime directory, no longer stops the companion.
+- Give large clipboard reads a total budget of 8 seconds once a payload passes 32 MiB, 12 seconds past 64 MiB (4 seconds otherwise), measured from capture start. Allow 40 seconds for the receiver handshake to cover its two initial captures plus connection/startup overhead.
+- Treat an `OSError` from the initial snapshot as an unavailable selection, so that snapshot failure alone does not abort watcher startup. Report a missing runtime-directory variable in the reader as a connection error. An unavailable Wayland session or failed watcher can still stop the companion; this is not a session-recovery guarantee.
 - Add a bounded, read-only Python data-control reader, installed by both the manual installer and plugin. Requires data-control protocol v2 and exactly one Wayland seat; no additional package or build step. Install matching updated runtimes on both computers.
 - Add private-compositor regression tests for offer replacement, source association, byte limits, timeout, unsupported selections and marker support. Guide edits preserve existing fcitx5/Synergy policy settings, qualify policy licensing and explain receiver-first upgrades.
 
