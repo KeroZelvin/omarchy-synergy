@@ -248,6 +248,17 @@ class SecretSourceTests(unittest.IsolatedAsyncioTestCase):
         url = b"chrome-extension://ghmbeldphafepmbegfdlkpapadhbakde/popup.html#/item/x"
         self.assertTrue((await self.snapshot([relay.TEXT, relay.sharing_state.SOURCE_URL], url))[2])
 
+    async def test_proton_pass_desktop_origin_is_secret_without_hint(self):
+        for url in (b"https://pass.proton.me/", b"https://pass.proton.me/u/0/"):
+            with self.subTest(desktop_origin=True):
+                self.assertTrue((await self.snapshot([relay.TEXT, relay.sharing_state.SOURCE_URL], url))[2])
+
+    async def test_similar_origins_do_not_match_proton_pass(self):
+        for url in (b"https://pass.proton.me.example.com/", b"https://example.com/pass.proton.me/",
+                    b"https://pass.proton.me@evil.example/", b"http://pass.proton.me/"):
+            with self.subTest(nonmatching_origin=True):
+                self.assertFalse((await self.snapshot([relay.TEXT, relay.sharing_state.SOURCE_URL], url))[2])
+
     async def test_ordinary_browser_copy_is_not_secret(self):
         self.assertFalse((await self.snapshot([relay.TEXT, relay.sharing_state.SOURCE_URL], b"https://example.com/"))[2])
         self.assertFalse((await self.snapshot([relay.TEXT], None))[2])
