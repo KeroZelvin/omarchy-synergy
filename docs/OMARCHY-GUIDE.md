@@ -27,7 +27,30 @@ On Hyprland 0.56, pressing Shift, Super, Ctrl or Alt while the pointer is on the
 hl.config({ input_capture = { capture_modifiers = true } })
 ```
 
-Check with `hyprctl getoption input-capture:capture_modifiers` (expect `true`). Cause: in Hyprland 0.56.2 `CEis::resetKeyboard()` recreates the captured keyboard but does not restart emulation; modifier changes reach it through `CSeatManager::setKeyboard()` unless `capture_modifiers` returns early during capture.
+Check with `hyprctl getoption input-capture:capture_modifiers` (expect `true`). Cause: in Hyprland 0.56.2 `CEis::resetKeyboard()` recreates the captured keyboard but does not restart emulation; modifier changes reach it through `CSeatManager::setKeyboard()` unless `capture_modifiers` returns early during capture. Upstream report: [hyprwm/Hyprland discussion #15992](https://github.com/hyprwm/Hyprland/discussions/15992).
+
+### Recommended on the keyboard/mouse computer: keep fcitx5's virtual keyboard
+
+`capture_modifiers` does not cover a keyboard being added or recreated during capture, which hits the same reset. Fcitx5 (installed by Omarchy) recreates its virtual keyboard by default. Create `~/.config/fcitx5/conf/waylandim.conf` containing:
+
+```ini
+PersistentVirtualKeyboard=True
+```
+
+Then restart fcitx5 with `fcitx5 -rd`. To undo, delete the file and restart it again. Hotplugging a real keyboard during capture can still drop typing until the pointer crosses back.
+
+### Optional on the receiving computer: keep Synergy on the LAN
+
+When both computers are also on Tailscale, Synergy's background service may rewrite the client's server address to the Tailscale one. To pin the client to the LAN address, use Synergy's admin policy file, which must be owned by root and not writable by others. Replace the address with the keyboard/mouse computer's reserved LAN address:
+
+```bash
+sudo install -d -m 755 /etc/synergy-3
+printf '[client]\nremoteHost=192.168.1.10\n' | sudo tee /etc/synergy-3/policy.ini >/dev/null
+sudo chmod 644 /etc/synergy-3/policy.ini
+systemctl --user restart synergy-3.service
+```
+
+Check with `/opt/Synergy/synergy-core --locked-settings`, which should list `client/remoteHost` as locked, and `ss -tn state established '( dport = :24800 )'`. Delete the file and restart the service to undo. Synergy's separate background link on port 24802 may still use both routes.
 
 ## 2. Build the receiving bridge
 
@@ -98,7 +121,7 @@ Test edge crossing, clicks, typing, modifier keys, scrolling, every receiving mo
 
 ## 5. Add optional clipboard sharing
 
-Use [the experimental 0.1.0 plugin wizard](PLUGIN.md), preparing the receiver before pairing the source. Both computers need Python 3.11+, wl-clipboard and active Wayland sessions, with a working trusted OpenSSH or Tailscale SSH route from source to receiver. Install the same revision on both computers.
+Use [the experimental 0.2.0 plugin wizard](PLUGIN.md), preparing the receiver before pairing the source. Both computers need Python 3.11+, wl-clipboard and active Wayland sessions, with a working trusted OpenSSH or Tailscale SSH route from source to receiver. Install the same revision on both computers.
 
 For a shell-independent installation, follow [the manual companion setup](clipboard.md). Configure the remote host, remote script path and Synergy peer ID only on the input source, then test in the foreground before enabling its user service.
 
@@ -118,7 +141,7 @@ The [Omarchy plugin and two-device pairing wizard](PLUGIN.md) provide receiver p
 
 The accepted input bridge passed six checks on each computer. The owner confirmed mouse movement, typing, scrolling, both receiving monitors, return crossing, middle-click paste and the Shift/Codex correction. See [the historical acceptance report](ACCEPTANCE.md) for that baseline.
 
-The current plugin/companion passes 38 isolated tests on each computer. Live text, PNG and independent PRIMARY transfers passed in both directions over both OpenSSH and Tailscale SSH, along with persistent pause, Synergy gating, reconnect and widget lifecycle checks. The owner confirmed pair-wide size changes and steady panels. See [current validation](VALIDATION.md) for actual payload sizes and remaining limits. Full 128 MiB payloads, reboot persistence and long-running behavior have not been validated.
+The current plugin/companion passes 50 isolated tests on each computer. Live text, PNG and independent PRIMARY transfers passed in both directions over both OpenSSH and Tailscale SSH, along with persistent pause, Synergy gating, reconnect and widget lifecycle checks. The owner confirmed pair-wide size changes and steady panels. See [current validation](VALIDATION.md) for actual payload sizes and remaining limits. Full 128 MiB payloads, reboot persistence and long-running behavior have not been validated.
 
 To roll back, disable the clipboard companion, remove only its installed user files, restore the backed-up portal configuration, remove the bridge's installed user-local binary/metadata and optional caller-verification override, then reload the user manager and restart the portal frontend. Do this during a planned pause in sharing; portal restarts can interrupt screen sharing or other portal sessions. Keep the keyboard and mouse physically available on each computer while changing the setup.
 

@@ -15,7 +15,7 @@ Both modes encrypt clipboard traffic. Only the source needs SSH access to the re
 
 ## Install the plugin
 
-Review [the experimental 0.1.0 project](https://github.com/KeroZelvin/omarchy-synergy), then add its Git URL through **Setup → Plugins → Add** and enable it. The command-line equivalent is:
+Review [the experimental 0.2.0 project](https://github.com/KeroZelvin/omarchy-synergy), then add its Git URL through **Setup → Plugins → Add** and enable it. The command-line equivalent is:
 
 ```bash
 omarchy plugin add https://github.com/KeroZelvin/omarchy-synergy.git --enable

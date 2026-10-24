@@ -1,6 +1,6 @@
 # Validation and limits
 
-## Unreleased password-manager guard — 23 October 2026
+## 0.2.0 password-manager guard — 23 October 2026
 
 The guard candidate passes 50 isolated tests on each of the two test computers. It recognizes the KDE sensitive marker, the listed Chromium password-manager extensions and the Proton Pass desktop/web origin. A regression first demonstrated that the desktop origin was missed, then passed after adding the exact HTTPS origin. Similar-looking domains, URL userinfo/path tricks and HTTP do not match. Missing, empty and invalid advertised browser-source metadata are withheld.
 

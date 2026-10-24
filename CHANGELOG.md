@@ -1,12 +1,12 @@
 # Changelog
 
-## Unreleased
-
-- Guide: set `input_capture.capture_modifiers = true` on the keyboard/mouse computer. Without it, Hyprland 0.56 stops forwarding keys after a modifier press during capture (keyboard-only loss, intermittent).
-
-## Unreleased
+## 0.2.0 — experimental
 
 - Password-manager copies marked with `x-kde-passwordManagerHint` stay on the computer where they were copied. **Send one secret** in the panel (or the `allowSecret` IPC call) shares exactly one regular-clipboard secret within 60 seconds, including one copied just before. Highlighted secrets and automatic initial sync never carry secrets. Received secrets are re-marked with `wl-copy --sensitive`. Copies from the Proton Pass, Bitwarden and 1Password Chromium extensions, and the Proton Pass desktop/web origin, count as secrets even without the marker.
+- Guide: set `input_capture.capture_modifiers = true` on the keyboard/mouse computer. Without it, Hyprland 0.56 stops forwarding keys after a modifier press during capture (keyboard-only loss, intermittent). Upstream: hyprwm/Hyprland discussion #15992.
+- Guide: recommend fcitx5 `PersistentVirtualKeyboard=True` on the keyboard/mouse computer, which avoids the virtual-keyboard recreation that hits the same Hyprland reset.
+- Guide: optional `/etc/synergy-3/policy.ini` to keep the Synergy client on the LAN when Tailscale is also present.
+- Updating from 0.1.0 changes the runtime bundle: install the same revision on both computers.
 
 ## 0.1.0 — experimental
 

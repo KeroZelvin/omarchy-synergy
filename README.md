@@ -12,12 +12,12 @@ The companion shares the regular clipboard and the primary selection (highlight 
 - [Validation and limits](docs/VALIDATION.md), including [the original two-computer acceptance](docs/ACCEPTANCE.md).
 - [Plugin and pairing wizard](docs/PLUGIN.md): Direct LAN (SSH), Tailscale (SSH), status, persistent pause and pair-wide size controls.
 - [Plugin architecture](docs/PLUGIN-DESIGN.md): runtime, pairing and lifecycle contracts.
-- [Experimental 0.1.0 changes](CHANGELOG.md).
+- [Experimental 0.2.0 changes](CHANGELOG.md).
 - [Credits](docs/CREDITS.md) and [contributing](CONTRIBUTING.md).
 
 ## Status
 
-**Experimental 0.1.0.** The accepted setup used Synergy 3.8.4, Omarchy 4.0.6 and Hyprland 0.56.2, with two receiving 1920×1080 monitors at scale 1. Input, middle-click sharing, clipboard pause/reconnect and the stuck-Shift correction passed owner acceptance. See the validation notes for which transport/revision has been tested and the limits of that result.
+**Experimental 0.2.0.** The accepted setup used Synergy 3.8.4, Omarchy 4.0.6 and Hyprland 0.56.2, with two receiving 1920×1080 monitors at scale 1. Input, middle-click sharing, clipboard pause/reconnect and the stuck-Shift correction passed owner acceptance. See the validation notes for which transport/revision has been tested and the limits of that result.
 
 The Python companion and example configuration are at the repository root. Run its isolated checks there:
 
