@@ -146,6 +146,10 @@ async def command(args, data=None, limit=None, timeout=4):
     finally:
         if process.returncode is None:
             process.kill()
+            # Python 3.11 may wait for pipe closure even after the child exits.
+            # Discard buffered output in bounded chunks before reaping it.
+            while await process.stdout.read(65536):
+                pass
             await process.wait()
 
 
