@@ -79,7 +79,7 @@ def data_control():
     found = []
     add_type = ctypes.CFUNCTYPE(None, ptr, ptr, ctypes.c_uint32, ctypes.c_char_p, ctypes.c_uint32)
     remove_type = ctypes.CFUNCTYPE(None, ptr, ptr, ctypes.c_uint32)
-    add = add_type(lambda _data, _registry, _name, interface, _version: found.append(interface.decode()))
+    add = add_type(lambda _data, _registry, _name, interface, version: found.append((interface.decode(), version)))
     remove = remove_type(lambda *_: None)
     callbacks = (ptr*2)(ctypes.cast(add, ptr).value, ctypes.cast(remove, ptr).value)
     try:
@@ -87,7 +87,9 @@ def data_control():
         registry = lib.wl_proxy_marshal_flags(display, 1, ctypes.byref(interface), 1, 0, ptr())
         if not registry or lib.wl_proxy_add_listener(registry, callbacks, None) != 0:
             return False
-        return lib.wl_display_roundtrip(display) >= 0 and "zwlr_data_control_manager_v1" in found
+        return (lib.wl_display_roundtrip(display) >= 0
+                and sum(name == "zwlr_data_control_manager_v1" and version >= 2 for name, version in found) == 1
+                and sum(name == "wl_seat" for name, _ in found) == 1)
     finally:
         if registry:
             lib.wl_proxy_destroy(registry)

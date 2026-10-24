@@ -8,7 +8,8 @@ from pathlib import Path
 def install(home, remote_only=False):
     source = Path(__file__).resolve().parent
     files = [(source / "relay.py", home / ".local/lib/synergy-clipboard/relay.py", 0o700),
-             (source / "sharing_state.py", home / ".local/lib/synergy-clipboard/sharing_state.py", 0o600)]
+             (source / "sharing_state.py", home / ".local/lib/synergy-clipboard/sharing_state.py", 0o600),
+             (source / "clipboard_offer.py", home / ".local/lib/synergy-clipboard/clipboard_offer.py", 0o600)]
     if not remote_only:
         files += [
             (source / "config.example.toml", home / ".config/synergy-clipboard/config.toml", 0o600),

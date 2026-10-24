@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 import sharing_state
 
 ROOT = Path(__file__).resolve().parents[1]
-RUNTIME_FILES = ("relay.py", "sharing_state.py", "plugin.py", "synergy_plugin/__init__.py",
+RUNTIME_FILES = ("relay.py", "sharing_state.py", "clipboard_offer.py", "plugin.py", "synergy_plugin/__init__.py",
                  "synergy_plugin/storage.py", "synergy_plugin/runtime.py", "synergy_plugin/pairing.py", "synergy_plugin/jobs.py",
                  "synergy-clipboard.service")
 

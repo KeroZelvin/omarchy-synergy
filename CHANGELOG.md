@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — 0.2.1 candidate
+
+- Fix a clipboard capture race in the 0.2.0 password-manager guard. MIME types, browser-source metadata and payload now come from one Wayland data offer. Selection replacement aborts the capture instead of mixing ordinary metadata with a later secret. This applies to regular clipboard, PRIMARY and initial synchronization.
+- Refuse received secrets when `wl-copy --sensitive` is unavailable, instead of writing them without the marker.
+- Add a bounded, read-only Python data-control reader, installed by both the manual installer and plugin. Requires data-control protocol v2 and exactly one Wayland seat; no additional package or build step. Install matching updated runtimes on both computers.
+- Add private-compositor regression tests for offer replacement, source association, byte limits, timeout, unsupported selections and marker support. Guide edits preserve existing fcitx5/Synergy policy settings, qualify policy licensing and explain receiver-first upgrades.
+
+The existing `v0.2.0` tag is unchanged. Its release remains unpublished pending the guard fix.
+
 ## 0.2.0 — experimental
 
 - Password-manager copies marked with `x-kde-passwordManagerHint` stay on the computer where they were copied. **Send one secret** in the panel (or the `allowSecret` IPC call) shares exactly one regular-clipboard secret within 60 seconds, including one copied just before. Highlighted secrets and automatic initial sync never carry secrets. Received secrets are re-marked with `wl-copy --sensitive`. Copies from the Proton Pass, Bitwarden and 1Password Chromium extensions, and the Proton Pass desktop/web origin, count as secrets even without the marker.

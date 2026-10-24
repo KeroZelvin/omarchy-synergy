@@ -1,8 +1,16 @@
 # Validation and limits
 
+## 0.2.1 guard-fix candidate — 24 October 2026
+
+The candidate reads MIME types, content and any browser-source metadata through one read-only Wayland data-control connection, using the same offer ID for every representation. Selection replacement during capture aborts the operation. Received secrets are refused if sensitive marking is unavailable. This addresses the two 0.2.0 findings below; unrecognized/unmarked sources remain outside detection.
+
+The isolated suite now contains 64 tests. A private fake compositor supplies real Wayland messages and pipe file descriptors, replaces selections during payload and source-URL requests, and verifies that neither normal transfer nor initial sync sends unclassified data. Tests also cover content/source bounds, deadlines, empty/unsupported selections, single-seat/v2 requirements and refusal when `wl-copy --sensitive` is absent.
+
+Native capture checks passed on both test computers: ordinary text and valid PNG, marked copies on both regular clipboard and PRIMARY, ordinary/lookalike browser origins, recognized extension/desktop origins, and empty/invalid source metadata. Twelve cases passed per computer. Supported original selections were held in memory and restored; no values were logged or saved. This is capture validation, not a new physical-input acceptance result. The candidate is not yet a published release.
+
 ## 0.2.0 review findings
 
-The tagged 0.2.0 guard is best-effort and is not a reliable secret-transfer boundary. `Clipboard.snapshot()` invokes `wl-paste` separately for advertised MIME types, content and optional browser source. An isolated review test reproduced a clipboard change between type discovery and content retrieval: the new marked payload was classified using the earlier ordinary offer and sent without an allowance. This test simulates the timing deterministically; it does not claim a live secret leak. The 50-test suite does not cover this interleaving. A future fix must bind metadata and payload to the same Wayland data offer; simply repeating type checks cannot guarantee that association.
+The tagged 0.2.0 guard is best-effort and is not a reliable secret-transfer boundary. `Clipboard.snapshot()` invokes `wl-paste` separately for advertised MIME types, content and optional browser source. An isolated review test reproduced a clipboard change between type discovery and content retrieval: the new marked payload was classified using the earlier ordinary offer and sent without an allowance. This test simulates the timing deterministically; it does not claim a live secret leak. Its 50-test suite does not cover this interleaving. The 0.2.1 candidate fixes the association by using a single Wayland offer; simply repeating type checks would not guarantee it.
 
 Received secrets are re-marked only when the installed `wl-copy` supports `--sensitive`. With an older binary, 0.2.0 logs a warning and still writes the value without the marker. Check `wl-copy --help` on both computers before testing secret sharing. Unmarked managers and Firefox copies without recognizable source metadata remain outside detection. Pause sharing before copying sensitive information when withholding must be assured.
 

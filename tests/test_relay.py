@@ -236,12 +236,10 @@ class SecretSourceTests(unittest.IsolatedAsyncioTestCase):
         self.env.stop(); self.temp.cleanup()
 
     async def snapshot(self, types, url):
-        clipboard = relay.Clipboard("coordinator", AsyncMock())
-        async def fake(args, data=None, limit=None, timeout=4):
-            if "--list-types" in args: return "\n".join(types).encode()
-            if args[-1] == relay.sharing_state.SOURCE_URL: return url
-            return b"value"
-        with patch.object(relay, "command", fake):
+        from test_clipboard_offer import CaptureServer
+        values = {mime: (url if mime == relay.sharing_state.SOURCE_URL else b"fixture") for mime in types}
+        with CaptureServer(values):
+            clipboard = relay.Clipboard("coordinator", AsyncMock())
             return await clipboard.snapshot()
 
     async def test_proton_pass_extension_copy_is_secret_without_hint(self):
@@ -283,7 +281,7 @@ class InstallTests(unittest.TestCase):
     def test_remote_install_has_no_service(self):
         with tempfile.TemporaryDirectory() as temp:
             home = Path(temp)
-            self.assertEqual(len(install.install(home, True)), 2)
+            self.assertEqual(len(install.install(home, True)), 3)
             self.assertFalse((home / ".config").exists())
 
 

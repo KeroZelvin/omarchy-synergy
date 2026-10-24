@@ -136,13 +136,13 @@ Test edge crossing, clicks, typing, modifier keys, scrolling, every receiving mo
 
 ## 5. Add optional clipboard sharing
 
-Use [the experimental 0.2.0 plugin wizard](PLUGIN.md), preparing the receiver before pairing the source. Both computers need Python 3.11+, wl-clipboard and active Wayland sessions, with a working trusted OpenSSH or Tailscale SSH route from source to receiver. Install the same revision on both computers.
+Use [the experimental 0.2.1 plugin wizard](PLUGIN.md), preparing the receiver before pairing the source. Both computers need Python 3.11+, wl-clipboard and active Wayland sessions, with a working trusted OpenSSH or Tailscale SSH route from source to receiver. Install the same revision on both computers.
 
 For a shell-independent installation, follow [the manual companion setup](clipboard.md). Configure the remote host, remote script path and Synergy peer ID only on the input source, then test in the foreground before enabling its user service.
 
 The regular clipboard and primary selection are separate. Copy/paste normally uses the regular clipboard; in many terminals Ctrl+Shift+C/V does that. Highlighting text and middle-clicking uses the primary selection. Shift+Insert behavior depends on the application. Test both selections explicitly. This setup does not implement a native portal Clipboard interface and does not advertise one.
 
-Supported copies are shared while the companion is active, except those recognized by the experimental password-manager guard. **Send one secret** allows one recognized regular-clipboard secret within 60 seconds; recognized PRIMARY secrets and automatic initial sync remain excluded. This is best-effort detection: unmarked/unrecognized sources and a clipboard change between metadata and content reads can evade it. Both computers must be trusted. Read [the guard limitations](VALIDATION.md#020-review-findings) before relying on it. The default `initial_sync = "none"` shares future changes; `"source"` deliberately replaces the remote's supported non-secret selections once after a fresh connection. On the keyboard/mouse source, stop the coordinator when needed:
+Supported copies are shared while the companion is active, except those recognized by the experimental password-manager guard. **Send one secret** allows one recognized regular-clipboard secret within 60 seconds; recognized PRIMARY secrets and automatic initial sync remain excluded. This is best-effort detection: unmarked or unrecognized sources can evade it. Both computers must be trusted. Read [the guard limitations](VALIDATION.md#020-review-findings) before relying on it. The default `initial_sync = "none"` shares future changes; `"source"` deliberately replaces the remote's supported non-secret selections once after a fresh connection. On the keyboard/mouse source, stop the coordinator when needed:
 
 ```bash
 systemctl --user stop synergy-clipboard.service
@@ -158,7 +158,7 @@ The [Omarchy plugin and two-device pairing wizard](PLUGIN.md) provide receiver p
 
 The accepted input bridge passed six checks on each computer. The owner confirmed mouse movement, typing, scrolling, both receiving monitors, return crossing, middle-click paste and the Shift/Codex correction. See [the historical acceptance report](ACCEPTANCE.md) for that baseline.
 
-The current plugin/companion passes 50 isolated tests on each computer. Live text, PNG and independent PRIMARY transfers passed in both directions over both OpenSSH and Tailscale SSH, along with persistent pause, Synergy gating, reconnect and widget lifecycle checks. The owner confirmed pair-wide size changes and steady panels. See [current validation](VALIDATION.md) for actual payload sizes and remaining limits. Full 128 MiB payloads, reboot persistence and long-running behavior have not been validated.
+The current plugin/companion passes 64 isolated tests on each computer. Live text, PNG and independent PRIMARY transfers passed in both directions over both OpenSSH and Tailscale SSH, along with persistent pause, Synergy gating, reconnect and widget lifecycle checks. The owner confirmed pair-wide size changes and steady panels. See [current validation](VALIDATION.md) for actual payload sizes and remaining limits. Full 128 MiB payloads, reboot persistence and long-running behavior have not been validated.
 
 To roll back, disable the clipboard companion, remove only its installed user files, restore the backed-up portal configuration, remove the bridge's installed user-local binary/metadata and optional caller-verification override, then reload the user manager and restart the portal frontend. Do this during a planned pause in sharing; portal restarts can interrupt screen sharing or other portal sessions. Keep the keyboard and mouse physically available on each computer while changing the setup.
 
