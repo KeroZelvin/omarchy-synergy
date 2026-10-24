@@ -9,6 +9,7 @@ import argparse
 import base64
 import contextlib
 import fcntl
+import functools
 import hashlib
 import json
 import logging
@@ -148,6 +149,18 @@ async def command(args, data=None, limit=None, timeout=4):
             await process.wait()
 
 
+@functools.cache
+def wl_copy_sensitive():
+    try:
+        result = subprocess.run(["wl-copy", "--help"], capture_output=True, text=True, timeout=4)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if "--sensitive" not in result.stdout + result.stderr:
+        LOG.warning("wl-copy lacks --sensitive; received secrets will not be marked for clipboard history")
+        return False
+    return True
+
+
 def digest(mime, data):
     return hashlib.sha256(mime.encode() + b"\0" + data).hexdigest()
 
@@ -172,6 +185,7 @@ class Clipboard:
         self.flags = ["--primary"] if selection == "primary" else []
         self.enabled = False
         self.last_digest = None
+        self.withheld = None
         self.lock = asyncio.Lock()
         self.changed = asyncio.Event()
         self.socket_path = Path(os.environ["XDG_RUNTIME_DIR"]) / f"synergy-clipboard-{role}-{selection}.sock"
@@ -191,7 +205,7 @@ class Clipboard:
         if data is None:
             return None
         mime = TEXT if selected in PREFERENCES[:4] else selected
-        return mime, data
+        return mime, data, sharing_state.SECRET_HINT in offered
 
     async def start(self):
         self.singleton = open(self.socket_path.with_suffix(".lock"), "w")
@@ -207,7 +221,7 @@ class Clipboard:
         except (ValueError, asyncio.TimeoutError):
             initial = None
         if initial:
-            self.last_digest = digest(*initial)
+            self.last_digest = digest(*initial[:2])
         loop = asyncio.get_running_loop()
 
         def notified():
@@ -221,43 +235,66 @@ class Clipboard:
             "notify", str(self.socket_path), stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL)
 
+    def withhold(self, value):
+        if value and value != self.withheld:
+            LOG.info("Withheld a password-manager copy from the %s selection", self.selection)
+            sharing_state.note_withheld()
+        elif not value and self.withheld:
+            sharing_state.clear_withheld()
+        self.withheld = value
+
     async def monitor(self):
         while True:
             try:
-                await asyncio.wait_for(self.changed.wait(), 3)
+                await asyncio.wait_for(self.changed.wait(), 1)
             except asyncio.TimeoutError:
                 if self.watcher.returncode is not None:
                     raise RuntimeError("clipboard watcher stopped")
+                # Allowing a secret after copying it sends the withheld copy.
+                if self.withheld and sharing_state.secret_allowed():
+                    self.changed.set()
                 continue
             self.changed.clear()
             await asyncio.sleep(0.025)
             try:
                 async with self.lock:
-                    snapshot = await self.snapshot()
-                    if not snapshot:
-                        self.last_digest = None
-                        continue
-                    mime, data = snapshot
-                    current_digest = digest(mime, data)
-                    if current_digest == self.last_digest:
-                        continue
-                    self.last_digest = current_digest
-                    if not self.enabled:
-                        continue
-                    await self.send({"kind": "clipboard", "selection": self.selection, "mime": mime,
-                                     "digest": current_digest,
-                                     "payload": base64.b64encode(data).decode("ascii")})
+                    await self.process(await self.snapshot())
             except (ValueError, OSError, asyncio.TimeoutError):
                 LOG.warning("Clipboard format, size or read timeout prevented a transfer")
+
+    async def process(self, snapshot):
+        if not snapshot:
+            self.last_digest = None
+            self.withhold(None)
+            return
+        mime, data, sensitive = snapshot
+        current_digest = digest(mime, data)
+        if not sensitive:
+            self.withhold(None)
+        if current_digest == self.last_digest:
+            return
+        if not self.enabled:
+            self.last_digest = current_digest
+            return
+        # Secrets never travel by highlight, and need a one-shot allowance to travel by copy.
+        if sensitive and not (self.selection == "clipboard" and sharing_state.consume_secret_allowance()):
+            self.withhold(current_digest)
+            return
+        self.last_digest = current_digest
+        self.withhold(None)
+        await self.send({"kind": "clipboard", "selection": self.selection, "mime": mime,
+                         "digest": current_digest, "payload": base64.b64encode(data).decode("ascii"),
+                         **({"sensitive": True} if sensitive else {})})
 
     async def seed(self):
         """Optionally seed the receiver from the coordinator after reconnecting."""
         async with self.lock:
             try:
                 snapshot = await self.snapshot()
-                if not snapshot or not self.enabled:
+                # Seeding is automatic, so it never carries a secret.
+                if not snapshot or not self.enabled or snapshot[2]:
                     return
-                mime, data = snapshot
+                mime, data, _ = snapshot
                 self.last_digest = digest(mime, data)
                 await self.send({"kind": "clipboard", "selection": self.selection,
                                  "mime": mime, "digest": self.last_digest,
@@ -273,7 +310,8 @@ class Clipboard:
                 return
             if value_digest == self.last_digest:
                 return
-            result = await command(["wl-copy", *self.flags, "--type", mime], data=data, limit=1024)
+            marker = ["--sensitive"] if message.get("sensitive") is True and wl_copy_sensitive() else []
+            result = await command(["wl-copy", *self.flags, *marker, "--type", mime], data=data, limit=1024)
             if result is None:
                 raise RuntimeError("clipboard write failed")
             self.last_digest = value_digest

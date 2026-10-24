@@ -31,6 +31,6 @@ The input bridge comes from the existing wayland-kdeconnect-fix project; its pat
 
 ## Clipboard scope
 
-Supports one UTF-8 text or PNG/JPEG/WebP/BMP representation per change, with a default 8 MiB limit. The plugin supports a pair-wide limit from 1–128 MiB, synchronized from either endpoint. It does not synchronize rich text, file lists, drag-and-drop, clipboard history or selection clearing. Both computers must be trusted: supported copied contents are shared while enabled. The Synergy gate does not track pointer focus or lock-screen state and is not a security boundary.
+Supports one UTF-8 text or PNG/JPEG/WebP/BMP representation per change, with a default 8 MiB limit. The plugin supports a pair-wide limit from 1–128 MiB, synchronized from either endpoint. It does not synchronize rich text, file lists, drag-and-drop, clipboard history or selection clearing. Password-manager copies marked as secret stay local unless you choose **Send one secret** for a single copy. Both computers must be trusted: other supported copied contents are shared while enabled. The Synergy gate does not track pointer focus or lock-screen state and is not a security boundary.
 
 The clipboard code and documentation use the [MIT license](LICENSE). The bridge patches retain their own [upstream MIT notice](patches/input-bridge/UPSTREAM-LICENSE).

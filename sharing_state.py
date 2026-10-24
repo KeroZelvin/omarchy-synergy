@@ -96,6 +96,70 @@ def set_paused(value):
         path.unlink(missing_ok=True)
 
 
+# Password managers mark copies with this KDE convention; wl-copy --sensitive sets it.
+SECRET_HINT = "x-kde-passwordManagerHint"
+SECRET_WINDOW = 60
+
+
+def runtime_dir():
+    return Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
+
+
+def secret_allowance_path():
+    return runtime_dir() / "synergy-clipboard-secret-allow"
+
+
+def withheld_path():
+    return runtime_dir() / "synergy-clipboard-secret-withheld"
+
+
+def _read_time(path):
+    # Runtime-only flags: a reboot or logout always clears them.
+    try:
+        if path.is_symlink() or path.stat().st_uid != os.getuid():
+            return None
+        return float(path.read_bytes()[:64])
+    except (OSError, ValueError):
+        return None
+
+
+def allow_secret(seconds=SECRET_WINDOW):
+    atomic_write(secret_allowance_path(), str(time.time() + seconds).encode())
+
+
+def secret_allowed():
+    until = _read_time(secret_allowance_path())
+    return until is not None and time.time() < until <= time.time() + SECRET_WINDOW
+
+
+def consume_secret_allowance():
+    """One-shot: the allowance covers exactly one secret transfer."""
+    allowed = secret_allowed()
+    cancel_secret()
+    return allowed
+
+
+def cancel_secret():
+    path = secret_allowance_path()
+    if not path.is_symlink():
+        path.unlink(missing_ok=True)
+
+
+def note_withheld():
+    atomic_write(withheld_path(), str(time.time()).encode())
+
+
+def clear_withheld():
+    path = withheld_path()
+    if not path.is_symlink():
+        path.unlink(missing_ok=True)
+
+
+def withheld_recent(seconds=120):
+    at = _read_time(withheld_path())
+    return at is not None and 0 <= time.time() - at < seconds
+
+
 def process_start(pid):
     # comm can contain spaces; fields after the final ')' start at field 3.
     return Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[19]

@@ -175,8 +175,9 @@ Panel {
     function pause(): void { root.request("pause") }
     function resume(): void { root.request("resume") }
     function reconnect(): void { root.request("reconnect") }
+    function allowSecret(): void { root.request("allow_secret") }
     function setLimit(maxMiB: int): void { pairLimit.value = maxMiB; root.request("set_limit", { max_mib: maxMiB }) }
-    function state(): string { return JSON.stringify({ step: root.step, busy: root.busy, state: root.summary.state || "", role: root.summary.role || "", error: root.errorText, review: !!root.preview.token, max_mib: root.preview.max_mib || root.summary.max_mib || 8, requested_max_mib: root.summary.requested_max_mib || 8, limit_pending: !!root.summary.limit_pending }) }
+    function state(): string { return JSON.stringify({ step: root.step, busy: root.busy, state: root.summary.state || "", role: root.summary.role || "", error: root.errorText, review: !!root.preview.token, max_mib: root.preview.max_mib || root.summary.max_mib || 8, requested_max_mib: root.summary.requested_max_mib || 8, limit_pending: !!root.summary.limit_pending, secret_allowed: !!root.summary.secret_allowed, secret_withheld: !!root.summary.secret_withheld }) }
     function geometry(): string { return JSON.stringify({ screen: popup.screen ? popup.screen.name : "", x: popup.cardOrigin.x, y: popup.cardOrigin.y, width: popup.contentWidth, height: popup.contentHeight }) }
   }
 
@@ -243,6 +244,15 @@ Panel {
               Action { text: "Pause sharing"; onClicked: root.request("pause") }
               Action { text: "Resume"; onClicked: root.request("resume") }
               Action { text: "Reconnect"; onClicked: root.request("reconnect") }
+            }
+            Copy { visible: !!root.summary.secret_withheld && !root.summary.secret_allowed; text: "A password-manager copy was kept on this computer."; color: Commons.Color.urgent }
+            RowLayout {
+              visible: root.summary.role !== "unconfigured"
+              Action {
+                text: root.summary.secret_allowed ? "Cancel secret sharing" : "Send one secret"
+                onClicked: root.request(root.summary.secret_allowed ? "cancel_secret" : "allow_secret")
+              }
+              Copy { text: "Password-manager copies stay local unless you allow one. Applies to Ctrl+C copies, never highlights."; font.pixelSize: Style.font.bodySmall }
             }
             Copy { visible: root.summary.role !== "unconfigured"; text: "Transfer limit for both computers"; font.bold: true }
             RowLayout {

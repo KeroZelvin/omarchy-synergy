@@ -177,6 +177,10 @@ def control(action, request=None):
         sharing_state.set_paused(False)
         if role == "source":
             runtime.service("start")
+    elif action == "allow_secret":
+        sharing_state.allow_secret()
+    elif action == "cancel_secret":
+        sharing_state.cancel_secret()
     elif action == "reconnect":
         if role == "source":
             runtime.service("restart")
@@ -189,4 +193,6 @@ def control(action, request=None):
     return {"message": {"pause": "Clipboard sharing paused. The pause survives restarts.",
                         "set_limit": "Transfer limit saved for both computers. It synchronizes when the encrypted connection is available.",
                         "resume": "Resume requested; waiting for the connection and Synergy.",
-                        "reconnect": "Reconnect requested."}[action], **runtime.status()}
+                        "reconnect": "Reconnect requested.",
+                        "allow_secret": f"The next password-manager copy on this computer is shared within {sharing_state.SECRET_WINDOW} seconds — or the one you just copied.",
+                        "cancel_secret": "Secret sharing cancelled."}[action], **runtime.status()}

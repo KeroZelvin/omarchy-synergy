@@ -153,6 +153,80 @@ class ClipboardTests(unittest.IsolatedAsyncioTestCase):
             await relay.command([sys.executable, "-c", "import time; time.sleep(5)"], timeout=0.05)
 
 
+class SecretTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.env = patch.dict(os.environ, {"XDG_RUNTIME_DIR": self.temp.name})
+        self.env.start()
+
+    async def asyncTearDown(self):
+        self.env.stop()
+        self.temp.cleanup()
+
+    def clipboard(self, selection="clipboard"):
+        clipboard = relay.Clipboard("coordinator", AsyncMock(), selection)
+        clipboard.enabled = True
+        return clipboard
+
+    async def test_secret_is_withheld_by_default(self):
+        clipboard = self.clipboard()
+        await clipboard.process((relay.TEXT, b"hunter2", True))
+        clipboard.send.assert_not_awaited()
+        self.assertTrue(relay.sharing_state.withheld_recent())
+        await clipboard.process((relay.TEXT, b"plain", False))
+        clipboard.send.assert_awaited_once()
+        self.assertFalse(relay.sharing_state.withheld_recent())
+
+    async def test_allowance_sends_one_marked_secret_then_expires(self):
+        clipboard = self.clipboard()
+        await clipboard.process((relay.TEXT, b"hunter2", True))
+        relay.sharing_state.allow_secret()
+        self.assertTrue(relay.sharing_state.secret_allowed())
+        # The withheld copy goes out once allowed, without copying it again.
+        await clipboard.process((relay.TEXT, b"hunter2", True))
+        message = clipboard.send.await_args.args[0]
+        self.assertIs(message["sensitive"], True)
+        self.assertFalse(relay.sharing_state.secret_allowed())
+        await clipboard.process((relay.TEXT, b"second-secret", True))
+        self.assertEqual(clipboard.send.await_count, 1)
+
+    async def test_highlighted_secret_never_uses_the_allowance(self):
+        clipboard = self.clipboard("primary")
+        relay.sharing_state.allow_secret()
+        await clipboard.process((relay.TEXT, b"hunter2", True))
+        clipboard.send.assert_not_awaited()
+        self.assertTrue(relay.sharing_state.secret_allowed())
+
+    async def test_paused_secret_does_not_consume_allowance(self):
+        clipboard = self.clipboard()
+        clipboard.enabled = False
+        relay.sharing_state.allow_secret()
+        await clipboard.process((relay.TEXT, b"hunter2", True))
+        self.assertTrue(relay.sharing_state.secret_allowed())
+
+    async def test_expired_or_far_future_allowance_is_refused(self):
+        relay.sharing_state.allow_secret(-1)
+        self.assertFalse(relay.sharing_state.secret_allowed())
+        relay.sharing_state.allow_secret(3600)
+        self.assertFalse(relay.sharing_state.secret_allowed())
+
+    async def test_seed_never_sends_a_secret(self):
+        clipboard = self.clipboard()
+        with patch.object(clipboard, "snapshot", AsyncMock(return_value=(relay.TEXT, b"hunter2", True))):
+            await clipboard.seed()
+        clipboard.send.assert_not_awaited()
+
+    async def test_received_secret_keeps_its_marker(self):
+        clipboard = relay.Clipboard("remote", AsyncMock())
+        clipboard.enabled = True
+        write = AsyncMock(return_value=b"")
+        with patch.object(relay, "command", write), patch.object(relay, "wl_copy_sensitive", return_value=True):
+            await clipboard.apply({**frame(b"hunter2"), "sensitive": True})
+            self.assertEqual(write.await_args.args[0], ["wl-copy", "--sensitive", "--type", relay.TEXT])
+            await clipboard.apply(frame(b"plain"))
+            self.assertEqual(write.await_args.args[0], ["wl-copy", "--type", relay.TEXT])
+
+
 class InstallTests(unittest.TestCase):
     def test_install_is_private_and_refuses_overwrite(self):
         with tempfile.TemporaryDirectory() as temp:

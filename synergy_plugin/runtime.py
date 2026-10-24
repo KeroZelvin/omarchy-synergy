@@ -147,4 +147,6 @@ def status():
             "max_mib": (record or {}).get("max_mib", config.get("max_mib", sharing_state.local_limit())),
             "requested_max_mib": limit["max_mib"], "limit_pending": limit["pending"],
             "runtime_matches": matches,
+            "secret_allowed": sharing_state.secret_allowed(),
+            "secret_withheld": sharing_state.withheld_recent(),
             "version": VERSION}
