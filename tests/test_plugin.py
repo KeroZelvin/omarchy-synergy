@@ -243,7 +243,8 @@ class CaptureLimitTests(unittest.IsolatedAsyncioTestCase):
             relay.set_limit(16*1024*1024)
             self.assertEqual(len(await relay.command(command)), 9*1024*1024)
             relay.set_limit(8*1024*1024)
-            with self.assertRaises(ValueError): await relay.command(command)
+            with self.assertRaises(ValueError):
+                await asyncio.wait_for(relay.command(command), 2)
 
 
 if __name__ == "__main__":
