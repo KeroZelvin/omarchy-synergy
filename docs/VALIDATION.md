@@ -1,5 +1,11 @@
 # Validation and limits
 
+## 0.2.0 review findings
+
+The tagged 0.2.0 guard is best-effort and is not a reliable secret-transfer boundary. `Clipboard.snapshot()` invokes `wl-paste` separately for advertised MIME types, content and optional browser source. An isolated review test reproduced a clipboard change between type discovery and content retrieval: the new marked payload was classified using the earlier ordinary offer and sent without an allowance. This test simulates the timing deterministically; it does not claim a live secret leak. The 50-test suite does not cover this interleaving. A future fix must bind metadata and payload to the same Wayland data offer; simply repeating type checks cannot guarantee that association.
+
+Received secrets are re-marked only when the installed `wl-copy` supports `--sensitive`. With an older binary, 0.2.0 logs a warning and still writes the value without the marker. Check `wl-copy --help` on both computers before testing secret sharing. Unmarked managers and Firefox copies without recognizable source metadata remain outside detection. Pause sharing before copying sensitive information when withholding must be assured.
+
 ## 0.2.0 password-manager guard — 23 October 2026
 
 The guard candidate passes 50 isolated tests on each of the two test computers. It recognizes the KDE sensitive marker, the listed Chromium password-manager extensions and the Proton Pass desktop/web origin. A regression first demonstrated that the desktop origin was missed, then passed after adding the exact HTTPS origin. Similar-looking domains, URL userinfo/path tricks and HTTP do not match. Missing, empty and invalid advertised browser-source metadata are withheld.

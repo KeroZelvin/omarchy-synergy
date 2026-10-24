@@ -27,30 +27,45 @@ On Hyprland 0.56, pressing Shift, Super, Ctrl or Alt while the pointer is on the
 hl.config({ input_capture = { capture_modifiers = true } })
 ```
 
-Check with `hyprctl getoption input-capture:capture_modifiers` (expect `true`). Cause: in Hyprland 0.56.2 `CEis::resetKeyboard()` recreates the captured keyboard but does not restart emulation; modifier changes reach it through `CSeatManager::setKeyboard()` unless `capture_modifiers` returns early during capture. Upstream report: [hyprwm/Hyprland discussion #15992](https://github.com/hyprwm/Hyprland/discussions/15992).
+Run `hyprctl configerrors` after reloading, then check `hyprctl getoption input-capture:capture_modifiers` (expect `true`). This also sends captured modifiers to the receiving computer, so test your usual shortcuts and return crossing. The workaround targets the tested Hyprland 0.56.2 behavior; recheck it when upgrading Hyprland. Cause: `CEis::resetKeyboard()` recreates the captured keyboard but does not restart emulation; modifier changes reach it through `CSeatManager::setKeyboard()` unless `capture_modifiers` returns early during capture. Upstream report: [hyprwm/Hyprland discussion #15992](https://github.com/hyprwm/Hyprland/discussions/15992).
 
 ### Recommended on the keyboard/mouse computer: keep fcitx5's virtual keyboard
 
-`capture_modifiers` does not cover a keyboard being added or recreated during capture, which hits the same reset. Fcitx5 (installed by Omarchy) recreates its virtual keyboard by default. Create `~/.config/fcitx5/conf/waylandim.conf` containing:
+`capture_modifiers` does not cover a keyboard being added or recreated during capture, which can hit the same reset. If fcitx5 is running on the source, its Wayland input-method v2 backend normally recreates its virtual keyboard on activation/deactivation. The [upstream option](https://github.com/fcitx/fcitx5/blob/master/src/frontend/waylandim/waylandim.h) keeps that object alive. Back up `~/.config/fcitx5/conf/waylandim.conf` if it exists, create its parent directory if needed, and add or update this top-level setting while preserving other entries:
 
 ```ini
 PersistentVirtualKeyboard=True
 ```
 
-Then restart fcitx5 with `fcitx5 -rd`. To undo, delete the file and restart it again. Hotplugging a real keyboard during capture can still drop typing until the pointer crosses back.
+Return the pointer to the source and finish any input-method composition before restarting fcitx5 with `fcitx5 -rd`. Retest typing and modifier keys on the receiver. To undo, restore the previous value or remove only this setting, then restart fcitx5 again. Delete the file only if you created it for this setting and it contains nothing else. Hotplugging a real keyboard during capture can still drop typing until the pointer crosses back.
 
 ### Optional on the receiving computer: keep Synergy on the LAN
 
-When both computers are also on Tailscale, Synergy's background service may rewrite the client's server address to the Tailscale one. To pin the client to the LAN address, use Synergy's admin policy file, which must be owned by root and not writable by others. Replace the address with the keyboard/mouse computer's reserved LAN address:
+When both computers are also on Tailscale, Synergy's background service may rewrite the client's server address to the Tailscale one. Symless documents policy locks as a **Business Advanced/Enterprise** feature; check your edition against [the vendor's policy guide](https://support.symless.com/hc/en-us/articles/50464776117521-Locking-down-settings-so-users-cannot-change-them) before using this optional workaround. It pins Synergy's input connection, not the clipboard companion's separate SSH route.
+
+During a planned pause in input sharing, back up any existing `/etc/synergy-3/policy.ini`. Create the directory and open the file with:
 
 ```bash
-sudo install -d -m 755 /etc/synergy-3
-printf '[client]\nremoteHost=192.168.1.10\n' | sudo tee /etc/synergy-3/policy.ini >/dev/null
+sudo install -d -o root -g root -m 755 /etc/synergy-3
+sudoedit /etc/synergy-3/policy.ini
+```
+
+Add or update `remoteHost` in its `[client]` section, preserving every other section and key. Replace the example address below with the keyboard/mouse computer's reserved LAN address; do not paste it unchanged:
+
+```ini
+[client]
+remoteHost=192.168.1.10
+```
+
+The file and its parent directories must be root-owned and not writable by other users. For the standard native-package path:
+
+```bash
+sudo chown root:root /etc/synergy-3/policy.ini
 sudo chmod 644 /etc/synergy-3/policy.ini
 systemctl --user restart synergy-3.service
 ```
 
-Check with `/opt/Synergy/synergy-core --locked-settings`, which should list `client/remoteHost` as locked, and `ss -tn state established '( dport = :24800 )'`. Delete the file and restart the service to undo. Synergy's separate background link on port 24802 may still use both routes.
+Check `/opt/Synergy/synergy-core --locked-settings` for `client/remoteHost`, then check the peer address with `ss -tn state established '( dport = :24800 )'` (adjust the port if customized). If the lock is absent, do not assume the address is pinned. To undo, restore the previous `remoteHost` value or remove only that key, then restart the service. Delete the policy file only if it was created solely for this setting. Synergy's separate background link on port 24802 may still use both routes. If the reserved LAN address changes or the LAN is unavailable, the pinned input connection will fail until you update or remove the override.
 
 ## 2. Build the receiving bridge
 
@@ -127,11 +142,13 @@ For a shell-independent installation, follow [the manual companion setup](clipbo
 
 The regular clipboard and primary selection are separate. Copy/paste normally uses the regular clipboard; in many terminals Ctrl+Shift+C/V does that. Highlighting text and middle-clicking uses the primary selection. Shift+Insert behavior depends on the application. Test both selections explicitly. This setup does not implement a native portal Clipboard interface and does not advertise one.
 
-All supported copies are shared while the companion is active, including sensitive text. Both computers must be trusted. The default `initial_sync = "none"` shares future changes; `"source"` deliberately replaces the remote's supported selections once after a fresh connection. Pause the companion directly when needed:
+Supported copies are shared while the companion is active, except those recognized by the experimental password-manager guard. **Send one secret** allows one recognized regular-clipboard secret within 60 seconds; recognized PRIMARY secrets and automatic initial sync remain excluded. This is best-effort detection: unmarked/unrecognized sources and a clipboard change between metadata and content reads can evade it. Both computers must be trusted. Read [the guard limitations](VALIDATION.md#020-review-findings) before relying on it. The default `initial_sync = "none"` shares future changes; `"source"` deliberately replaces the remote's supported non-secret selections once after a fresh connection. On the keyboard/mouse source, stop the coordinator when needed:
 
 ```bash
 systemctl --user stop synergy-clipboard.service
 ```
+
+For a pause that survives service restarts, use **Pause sharing** in either panel. The receiver endpoint is started over SSH by the source; stopping a receiver-local coordinator service does not stop that endpoint.
 
 ## Omarchy plugin status
 

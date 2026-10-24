@@ -21,7 +21,7 @@ Review [the experimental 0.2.0 project](https://github.com/KeroZelvin/omarchy-sy
 omarchy plugin add https://github.com/KeroZelvin/omarchy-synergy.git --enable
 ```
 
-Install the same revision on both computers. This command becomes usable once the repository is published; the local review candidate can be installed as follows.
+Install the same revision on both computers. The Git URL follows the repository's default branch; it does not pin a release tag. To reproduce a tagged release, check out that tag in a local clone on both computers and install from that checkout.
 
 For a local Git checkout, run this from its root on each computer:
 
@@ -61,6 +61,10 @@ The service follows Synergy connection state, not pointer focus or screen-lock s
 ## Update or remove
 
 Use `omarchy plugin update community.omarchy-synergy` to review and update the plugin checkout. To update companion runtime code, repeat receiver preparation and source pairing with the matching plugin revision. The wizard backs up files and checks compatibility; merely updating or reloading a widget does not silently overwrite the running companion. Some QML changes on the tested Omarchy 4.0.6 shell required `omarchy restart shell` to load fully; this does not restart the clipboard service.
+
+For 0.2.0, pause sharing on the source, update both plugin checkouts, prepare the receiver's runtime, then repeat the source's connection review and activation. Preserve the existing SSH route, selected peer, pair limit and initial-sync choice. Resume when both endpoints are ready. A runtime-mismatch warning compares that computer's plugin files with its installed runtime; the source pairing check separately verifies the receiver bundle. The warning clears after the local runtime is reinstalled from the matching checkout. Confirm both panels reach sharing and the pair limit has no pending change. Use harmless copies to test ordinary clipboard, PRIMARY and the secret override in both directions.
+
+**Send one secret** applies on the computer where the secret is copied. It grants one regular-clipboard transfer within 60 seconds, including a recognized copy already withheld there. It does not permit recognized PRIMARY secrets or initial-sync secrets. Cancellation and expiry prevent a future transfer; they do not erase an already received value or prevent repeated pastes. Detection has [known limitations](VALIDATION.md#020-review-findings), and a receiver needs `wl-copy --sensitive` to preserve the sensitive marker.
 
 Disabling/removing the widget hides its controls and leaves the separately installed companion running. To stop sharing first, use **Pause sharing** on the source, or:
 
