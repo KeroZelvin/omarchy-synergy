@@ -1,10 +1,18 @@
 # Validation and limits
 
+## CI integration and full-diff review — 24 October 2026
+
+The combined PR head `a9fa4af` passes [GitHub Actions run 40118428553](https://github.com/KeroZelvin/omarchy-synergy/actions/runs/40118428553): all 69 isolated tests on Python 3.11.17 and 3.14.8, the official Omarchy v4.0.6 plugin validator pinned by commit, and an Arch-container build of the three input-bridge patches against their documented upstream base. All six CTest checks pass. The workflow has read-only repository permissions, no custom secrets, retained artifacts or caches, and no deployment or release steps. Arch packages intentionally track current releases.
+
+Review of the full diff against main, including the CI workflow and Python 3.11 cleanup fix, found no additional confirmed code defect. Both local Python suites, the pinned plugin validator, workflow linting and diff checks pass. Additional isolated Python 3.11 helper checks exercise blocked stdin, oversized stdout, stalled stdout and cancellation; each fails or cancels as expected and finishes cleanup promptly. These use synthetic subprocesses without desktop clipboard access.
+
+The cleanup fix drains buffered helper output in bounded chunks after killing the process, before waiting for its exit. The existing large-capture test now enforces a completion bound on oversized-output rejection. This source change was introduced after the two-computer acceptance at `9ca1631` below; this review does not claim deployment or paired acceptance of the CI-integrated runtime. QML rendering, actual paired Synergy behavior and the previously documented historical uncertainty remain separate from CI. PR #1 stays unmerged and publication stays held.
+
 ## 0.2.1 guard-fix candidate — 24 October 2026
 
 The candidate reads MIME types, content and any browser-source metadata through one read-only Wayland data-control connection, using the same offer ID for every representation. Selection replacement during capture aborts the operation. Received secrets are refused if sensitive marking is unavailable. This addresses the two 0.2.0 findings below; unrecognized/unmarked sources remain outside detection.
 
-The current isolated suite passes 69 tests on each computer at runtime code commit `9ca1631`. The earlier code commit `2fc31d1` passed its then-current 64 tests on each computer. A private fake compositor supplies real Wayland messages and pipe file descriptors, replaces selections during payload and source-URL requests, and verifies that neither normal transfer nor initial sync sends unclassified data. Tests also cover content/source bounds, deadlines, fragmented messages, larger pipe transfers, descriptor cleanup, empty/unsupported selections, single-seat/v2 requirements and refusal when `wl-copy --sensitive` is absent.
+The isolated suite at runtime code commit `9ca1631` passed 69 tests on each computer. The earlier code commit `2fc31d1` passed its then-current 64 tests on each computer. A private fake compositor supplies real Wayland messages and pipe file descriptors, replaces selections during payload and source-URL requests, and verifies that neither normal transfer nor initial sync sends unclassified data. Tests also cover content/source bounds, deadlines, fragmented messages, larger pipe transfers, descriptor cleanup, empty/unsupported selections, single-seat/v2 requirements and refusal when `wl-copy --sensitive` is absent.
 
 Earlier native capture checks at `2fc31d1` passed on both test computers: ordinary text and valid PNG, marked copies on both regular clipboard and PRIMARY, ordinary/lookalike browser origins, recognized extension/desktop origins, and empty/invalid source metadata. Twelve cases passed per computer.
 
@@ -78,7 +86,7 @@ The owner previously confirmed both receiving monitors, typing, scrolling, retur
 
 ## Practical limits
 
-Tested with Synergy 3.8.4, Omarchy 4.0.6, Hyprland 0.56.2, Python 3.14 and wl-clipboard 2.3. The receiver has two adjacent 1920×1080 monitors at scale 1. Python 3.11+ is the intended minimum; older Python releases were not exercised here.
+Desktop acceptance used Synergy 3.8.4, Omarchy 4.0.6, Hyprland 0.56.2, Python 3.14 and wl-clipboard 2.3. The receiver has two adjacent 1920×1080 monitors at scale 1. Python 3.11 is the supported minimum and passes the isolated CI suite alongside 3.14; this does not establish desktop acceptance on Python 3.11.
 
 Not validated: full 128 MiB payloads, reboot persistence, long soak, fractional/mixed scaling, rotation/hotplug, full physical AltGr/Super/keyboard-layout coverage or additional distributions. Restart the input bridge after geometry changes. The optional caller-verification override reduces filesystem isolation and remains a maintainer-review point.
 
