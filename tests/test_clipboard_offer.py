@@ -36,11 +36,12 @@ class CaptureServer:
     OFFER = 0xff000001
 
     def __init__(self, values=None, *, selection="clipboard", replace_on=None,
-                 delay=0, seats=1, manager_version=2, fragmented=False):
+                 delay=0, seats=1, manager_version=2, fragmented=False, pause_after=None):
         self.values = {relay.TEXT: b"ordinary fixture"} if values is None else values
         self.selection, self.replace_on, self.delay = selection, replace_on, delay
         self.seats, self.manager_version = seats, manager_version
         self.fragmented = fragmented
+        self.pause_after = pause_after  # (bytes, seconds): stall mid-payload
         self.requests = []
         self.error = None
 
@@ -144,8 +145,13 @@ class CaptureServer:
                                 value = self.values[mime]
                                 if value is not None:
                                     view = memoryview(value)
+                                    paused = self.pause_after is None
                                     while view:
-                                        view = view[os.write(fd, view):]
+                                        if not paused and len(value) - len(view) >= self.pause_after[0]:
+                                            time.sleep(self.pause_after[1])
+                                            paused = True
+                                        chunk = view if paused else view[:self.pause_after[0]-(len(value)-len(view))]
+                                        view = view[os.write(fd, chunk):]
                             finally:
                                 os.close(fd)
         except (BrokenPipeError, ConnectionResetError):
@@ -219,6 +225,28 @@ class OfferTests(unittest.TestCase):
         with CaptureServer(delay=0.15), self.assertRaises(TimeoutError):
             clipboard_offer.capture("clipboard", 1024, timeout=0.05)
 
+    def test_large_payload_deadlines_follow_delivered_size(self):
+        mib = 1024 * 1024
+        for size, seconds in ((0, 4), (32*mib, 4), (32*mib+1, 8), (64*mib, 8), (64*mib+1, 12), (128*mib, 12)):
+            self.assertEqual(clipboard_offer.allowed_seconds(size, 4), seconds)
+        self.assertEqual(clipboard_offer.allowed_seconds(1, 20), 20)
+
+    def test_payload_past_a_size_threshold_gets_more_time(self):
+        value = b"y" * 4096
+        with patch.object(clipboard_offer, "LARGE_DEADLINES", ((2048, 1.0),)):
+            # Stalls after crossing the threshold: the longer deadline applies.
+            with CaptureServer({relay.TEXT:value}, pause_after=(3000, 0.3)):
+                self.assertEqual(clipboard_offer.capture("clipboard", len(value), timeout=0.15)[1], value)
+            # Stalls before crossing it: the base deadline still applies.
+            with CaptureServer({relay.TEXT:value}, pause_after=(1000, 0.3)), self.assertRaises(TimeoutError):
+                clipboard_offer.capture("clipboard", len(value), timeout=0.15)
+
+    def test_missing_runtime_directory_is_a_connection_error(self):
+        with patch.dict(os.environ, {"WAYLAND_DISPLAY":"wayland-test"}):
+            os.environ.pop("XDG_RUNTIME_DIR", None)
+            with self.assertRaisesRegex(OSError, "runtime directory"):
+                clipboard_offer.capture("clipboard", 1024)
+
     def test_ambiguous_seat_and_missing_v2_fail_closed(self):
         for options in ({"seats":2}, {"manager_version":1}):
             with CaptureServer(**options) as server, self.assertRaisesRegex(ValueError, "exactly one"):
@@ -250,6 +278,18 @@ class RelayOfferTests(unittest.IsolatedAsyncioTestCase):
             await clipboard.process(snapshot)
             clipboard.send.assert_awaited_once()
             self.assertIs(clipboard.send.await_args.args[0]["sensitive"], True)
+
+    async def test_start_survives_an_unreachable_compositor(self):
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"XDG_RUNTIME_DIR":temp, "WAYLAND_DISPLAY":"missing-display"}):
+            clipboard = relay.Clipboard("coordinator", AsyncMock())
+            watcher = AsyncMock(returncode=0)
+            with patch.object(relay.asyncio, "create_subprocess_exec", AsyncMock(return_value=watcher)):
+                await clipboard.start()
+            try:
+                self.assertIsNone(clipboard.last_digest)
+                self.assertIs(clipboard.watcher, watcher)
+            finally:
+                await clipboard.close()
 
     async def test_receiver_without_sensitive_flag_support_never_writes_secret(self):
         with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"XDG_RUNTIME_DIR":temp}):

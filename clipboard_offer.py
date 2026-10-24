@@ -26,6 +26,13 @@ MANAGER = "zwlr_data_control_manager_v1"
 TEXT = "text/plain;charset=utf-8"
 PREFERENCES = (TEXT, "text/plain;charset=UTF-8", "text/plain", "UTF8_STRING",
                "image/png", "image/jpeg", "image/webp", "image/bmp")
+# Total seconds allowed once a payload grows past each size; largest first.
+LARGE_DEADLINES = ((64 * 1024 * 1024, 12), (32 * 1024 * 1024, 8))
+
+
+def allowed_seconds(size, timeout):
+    """A large copy earns more time only after it has delivered that many bytes."""
+    return max(timeout, next((seconds for limit, seconds in LARGE_DEADLINES if size > limit), 0))
 
 
 def _string(value):
@@ -58,7 +65,9 @@ class OfferReader:
         if selection not in {"clipboard", "primary"}:
             raise ValueError("Unsupported selection")
         self.selection = selection
-        self.deadline = time.monotonic() + timeout
+        self.timeout = timeout
+        self.started = time.monotonic()
+        self.deadline = self.started + timeout
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.buffer = bytearray()
         self.next_id = 2
@@ -174,7 +183,10 @@ class OfferReader:
             raise OSError("Wayland display is unavailable")
         path = Path(display)
         if not path.is_absolute():
-            path = Path(os.environ["XDG_RUNTIME_DIR"]) / path
+            runtime = os.environ.get("XDG_RUNTIME_DIR")
+            if not runtime:
+                raise OSError("Wayland runtime directory is unavailable")
+            path = Path(runtime) / path
         self.sock.settimeout(self.remaining())
         self.sock.connect(str(path))
         self.registry = self.new_id()
@@ -221,6 +233,7 @@ class OfferReader:
                         if len(data) + len(chunk) > limit:
                             raise ValueError("Clipboard representation exceeds limit")
                         data.extend(chunk)
+                        self.deadline = max(self.deadline, self.started + allowed_seconds(len(data), self.timeout))
             # Observe replacements already queued by the compositor before returning.
             self.sync()
             return result
@@ -232,7 +245,8 @@ class OfferReader:
 def capture(selection, max_bytes, timeout=4):
     """Return (normalized MIME, bytes, sensitive), or None for no supported offer.
 
-    Called in a worker thread; every socket/pipe wait shares one finite deadline.
+    Called in a worker thread; every socket/pipe wait shares one finite deadline,
+    extended to 8 or 12 seconds once the payload passes 32 or 64 MiB.
     Closing the connection releases all server-side offer/device resources.
     """
     reader = OfferReader(selection, timeout)

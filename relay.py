@@ -209,7 +209,7 @@ class Clipboard:
         self.sock.setblocking(False)
         try:
             initial = await self.snapshot()
-        except (ValueError, asyncio.TimeoutError):
+        except (ValueError, OSError, asyncio.TimeoutError):
             initial = None
         if initial:
             self.last_digest = digest(*initial[:2])
