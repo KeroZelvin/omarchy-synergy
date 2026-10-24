@@ -19,6 +19,16 @@ pacman -Q synergy hyprland xdg-desktop-portal xdg-desktop-portal-hyprland libei
 
 Use a trusted LAN or an existing Tailscale connection. For the clipboard companion, use an existing trusted SSH route: OpenSSH on the LAN/VPN or optional Tailscale SSH. Verify the expected host identity and noninteractive authentication first. Review changed host keys on the receiving computer rather than disabling checking. Setting up SSH permissions, account access or router reservations is outside this package's installer.
 
+### Required on the keyboard/mouse computer: capture modifiers
+
+On Hyprland 0.56, pressing Shift, Super, Ctrl or Alt while the pointer is on the other computer can make Hyprland replace the keyboard it captures for Synergy without forwarding keys on the replacement. Typing then stops (often right after the first Shift) while the mouse keeps working, until the pointer returns. Fcitx5's virtual keyboard makes this frequent and intermittent. Add this to `~/.config/hypr/input.lua` on the computer whose keyboard is shared, then `hyprctl reload`:
+
+```lua
+hl.config({ input_capture = { capture_modifiers = true } })
+```
+
+Check with `hyprctl getoption input-capture:capture_modifiers` (expect `true`). Cause: in Hyprland 0.56.2 `CEis::resetKeyboard()` recreates the captured keyboard but does not restart emulation; modifier changes reach it through `CSeatManager::setKeyboard()` unless `capture_modifiers` returns early during capture.
+
 ## 2. Build the receiving bridge
 
 Only the receiving computer needs this bridge in the tested one-way input arrangement. Prepare the pinned upstream checkout and apply the three patches using [the patch-series instructions](../patches/input-bridge/README.md). An unmodified clone of the upstream fork does not contain these native Synergy fixes.
