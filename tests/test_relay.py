@@ -252,6 +252,11 @@ class SecretSourceTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse((await self.snapshot([relay.TEXT, relay.sharing_state.SOURCE_URL], b"https://example.com/"))[2])
         self.assertFalse((await self.snapshot([relay.TEXT], None))[2])
 
+    async def test_unreadable_browser_source_is_withheld(self):
+        for url in (None, b"", b"\xff"):
+            with self.subTest(source_unreadable=True):
+                self.assertTrue((await self.snapshot([relay.TEXT, relay.sharing_state.SOURCE_URL], url))[2])
+
 
 class InstallTests(unittest.TestCase):
     def test_install_is_private_and_refuses_overwrite(self):

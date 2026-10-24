@@ -215,7 +215,13 @@ class Clipboard:
             url = await command(["wl-paste", *self.flags, "--no-newline", "--type", sharing_state.SOURCE_URL], limit=4096)
         except (ValueError, asyncio.TimeoutError):
             return True  # fail closed: an unreadable source cannot prove it is safe
-        return bool(url) and url.decode(errors="replace").startswith(sharing_state.SECRET_SOURCES)
+        if not url:
+            return True
+        try:
+            source = url.decode()
+        except UnicodeDecodeError:
+            return True
+        return source.startswith(sharing_state.SECRET_SOURCES)
 
     async def start(self):
         self.singleton = open(self.socket_path.with_suffix(".lock"), "w")
