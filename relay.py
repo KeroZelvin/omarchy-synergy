@@ -205,7 +205,17 @@ class Clipboard:
         if data is None:
             return None
         mime = TEXT if selected in PREFERENCES[:4] else selected
-        return mime, data, sharing_state.SECRET_HINT in offered
+        return mime, data, sharing_state.SECRET_HINT in offered or await self.from_secret_source(offered)
+
+    async def from_secret_source(self, offered):
+        if sharing_state.SOURCE_URL not in offered:
+            return False
+        # The source URL names the copying page or extension, never the secret.
+        try:
+            url = await command(["wl-paste", *self.flags, "--no-newline", "--type", sharing_state.SOURCE_URL], limit=4096)
+        except (ValueError, asyncio.TimeoutError):
+            return True  # fail closed: an unreadable source cannot prove it is safe
+        return bool(url) and url.decode(errors="replace").startswith(sharing_state.SECRET_SOURCES)
 
     async def start(self):
         self.singleton = open(self.socket_path.with_suffix(".lock"), "w")

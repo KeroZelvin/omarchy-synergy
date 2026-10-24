@@ -98,6 +98,14 @@ def set_paused(value):
 
 # Password managers mark copies with this KDE convention; wl-copy --sensitive sets it.
 SECRET_HINT = "x-kde-passwordManagerHint"
+# Chromium-based password managers (e.g. the Proton Pass extension) set no hint,
+# but Chromium records where a copy came from. Fixed Chrome Web Store IDs.
+SOURCE_URL = "chromium/x-source-url"
+SECRET_SOURCES = (
+    "chrome-extension://ghmbeldphafepmbegfdlkpapadhbakde/",  # Proton Pass
+    "chrome-extension://nngceckbapebfimnlniiiahkandclblb/",  # Bitwarden
+    "chrome-extension://aeblfdkhhhdcdjpifhhbdiojplfjncoa/",  # 1Password
+)
 SECRET_WINDOW = 60
 
 

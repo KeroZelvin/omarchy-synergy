@@ -227,6 +227,32 @@ class SecretTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(write.await_args.args[0], ["wl-copy", "--type", relay.TEXT])
 
 
+class SecretSourceTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.env = patch.dict(os.environ, {"XDG_RUNTIME_DIR": self.temp.name}); self.env.start()
+
+    async def asyncTearDown(self):
+        self.env.stop(); self.temp.cleanup()
+
+    async def snapshot(self, types, url):
+        clipboard = relay.Clipboard("coordinator", AsyncMock())
+        async def fake(args, data=None, limit=None, timeout=4):
+            if "--list-types" in args: return "\n".join(types).encode()
+            if args[-1] == relay.sharing_state.SOURCE_URL: return url
+            return b"value"
+        with patch.object(relay, "command", fake):
+            return await clipboard.snapshot()
+
+    async def test_proton_pass_extension_copy_is_secret_without_hint(self):
+        url = b"chrome-extension://ghmbeldphafepmbegfdlkpapadhbakde/popup.html#/item/x"
+        self.assertTrue((await self.snapshot([relay.TEXT, relay.sharing_state.SOURCE_URL], url))[2])
+
+    async def test_ordinary_browser_copy_is_not_secret(self):
+        self.assertFalse((await self.snapshot([relay.TEXT, relay.sharing_state.SOURCE_URL], b"https://example.com/"))[2])
+        self.assertFalse((await self.snapshot([relay.TEXT], None))[2])
+
+
 class InstallTests(unittest.TestCase):
     def test_install_is_private_and_refuses_overwrite(self):
         with tempfile.TemporaryDirectory() as temp:
