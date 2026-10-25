@@ -1,5 +1,8 @@
 # omarchy-synergy
 
+<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/725d5c0b-7167-4bf8-9cba-fdc0e2c2e85b" />
+
+
 A community integration for Synergy 3 on Omarchy/Hyprland: an Omarchy bar plugin and pairing wizard, setup instructions, reviewed input-bridge patches, and a clipboard companion for one pair of Wayland computers.
 
 The companion shares the regular clipboard and the primary selection (highlight text, then middle-click) independently and in both directions. It follows Synergy's core/peer connection state and allow-copy setting, with a short polling delay. Transfers use an existing trusted OpenSSH connection over your LAN or VPN; Tailscale SSH is an optional transport.
