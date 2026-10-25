@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -37,7 +38,7 @@ class PrivateHome(unittest.TestCase):
 class StateTests(PrivateHome):
     def test_pause_persists_across_processes(self):
         sharing_state.set_paused(True)
-        result = subprocess.run(["/usr/bin/python3", "-c", "import sharing_state; assert sharing_state.paused()"], check=True)
+        result = subprocess.run([sys.executable, "-c", "import sharing_state; assert sharing_state.paused()"], check=True)
         self.assertEqual(result.returncode, 0)
         sharing_state.set_paused(False)
         self.assertFalse(sharing_state.paused())
@@ -237,12 +238,13 @@ class JobTests(PrivateHome):
 
 class CaptureLimitTests(unittest.IsolatedAsyncioTestCase):
     async def test_capture_default_follows_the_updated_pair_limit(self):
-        command = ["/usr/bin/python3", "-c", "import sys;sys.stdout.buffer.write(b'x'*(9*1024*1024))"]
+        command = [sys.executable, "-c", "import sys;sys.stdout.buffer.write(b'x'*(9*1024*1024))"]
         with patch.object(relay, "MAX_BYTES"), patch.object(relay, "MAX_LINE"):
             relay.set_limit(16*1024*1024)
             self.assertEqual(len(await relay.command(command)), 9*1024*1024)
             relay.set_limit(8*1024*1024)
-            with self.assertRaises(ValueError): await relay.command(command)
+            with self.assertRaises(ValueError):
+                await asyncio.wait_for(relay.command(command), 2)
 
 
 if __name__ == "__main__":

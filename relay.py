@@ -24,14 +24,14 @@ import tomllib
 import re
 import time
 import sharing_state
+import clipboard_offer
 
 WIRE_VERSION = sharing_state.WIRE_VERSION
 
 MAX_BYTES = 8 * 1024 * 1024
 MAX_LINE = 12 * 1024 * 1024
-TEXT = "text/plain;charset=utf-8"
-PREFERENCES = (TEXT, "text/plain;charset=UTF-8", "text/plain", "UTF8_STRING",
-               "image/png", "image/jpeg", "image/webp", "image/bmp")
+TEXT = clipboard_offer.TEXT
+PREFERENCES = clipboard_offer.PREFERENCES
 ALLOWED = {TEXT, "image/png", "image/jpeg", "image/webp", "image/bmp"}
 SELECTIONS = ("clipboard", "primary")
 SCRIPT = Path(__file__).resolve()
@@ -146,6 +146,10 @@ async def command(args, data=None, limit=None, timeout=4):
     finally:
         if process.returncode is None:
             process.kill()
+            # Python 3.11 may wait for pipe closure even after the child exits.
+            # Discard buffered output in bounded chunks before reaping it.
+            while await process.stdout.read(65536):
+                pass
             await process.wait()
 
 
@@ -156,7 +160,7 @@ def wl_copy_sensitive():
     except (OSError, subprocess.SubprocessError):
         return False
     if "--sensitive" not in result.stdout + result.stderr:
-        LOG.warning("wl-copy lacks --sensitive; received secrets will not be marked for clipboard history")
+        LOG.warning("wl-copy lacks --sensitive; received secrets will be withheld")
         return False
     return True
 
@@ -194,34 +198,9 @@ class Clipboard:
         self.watcher = None
 
     async def snapshot(self):
-        types = await command(["wl-paste", *self.flags, "--list-types"], limit=65536)
-        if types is None:
-            return None
-        offered = types.decode(errors="replace").splitlines()
-        selected = next((mime for mime in PREFERENCES if mime in offered), None)
-        if not selected:
-            return None
-        data = await command(["wl-paste", *self.flags, "--no-newline", "--type", selected])
-        if data is None:
-            return None
-        mime = TEXT if selected in PREFERENCES[:4] else selected
-        return mime, data, sharing_state.SECRET_HINT in offered or await self.from_secret_source(offered)
-
-    async def from_secret_source(self, offered):
-        if sharing_state.SOURCE_URL not in offered:
-            return False
-        # The source URL names the copying page or extension, never the secret.
-        try:
-            url = await command(["wl-paste", *self.flags, "--no-newline", "--type", sharing_state.SOURCE_URL], limit=4096)
-        except (ValueError, asyncio.TimeoutError):
-            return True  # fail closed: an unreadable source cannot prove it is safe
-        if not url:
-            return True
-        try:
-            source = url.decode()
-        except UnicodeDecodeError:
-            return True
-        return source.startswith(sharing_state.SECRET_SOURCES)
+        # One connection and one offer identity for MIME types, source and data.
+        # The reader owns a finite deadline, including when this task is cancelled.
+        return await asyncio.to_thread(clipboard_offer.capture, self.selection, MAX_BYTES)
 
     async def start(self):
         self.singleton = open(self.socket_path.with_suffix(".lock"), "w")
@@ -234,7 +213,7 @@ class Clipboard:
         self.sock.setblocking(False)
         try:
             initial = await self.snapshot()
-        except (ValueError, asyncio.TimeoutError):
+        except (ValueError, OSError, asyncio.TimeoutError):
             initial = None
         if initial:
             self.last_digest = digest(*initial[:2])
@@ -326,7 +305,11 @@ class Clipboard:
                 return
             if value_digest == self.last_digest:
                 return
-            marker = ["--sensitive"] if message.get("sensitive") is True and wl_copy_sensitive() else []
+            sensitive = message.get("sensitive") is True
+            if sensitive and not wl_copy_sensitive():
+                LOG.warning("Received secret withheld: sensitive clipboard marking is unavailable")
+                return
+            marker = ["--sensitive"] if sensitive else []
             result = await command(["wl-copy", *self.flags, *marker, "--type", mime], data=data, limit=1024)
             if result is None:
                 raise RuntimeError("clipboard write failed")
@@ -531,7 +514,9 @@ async def coordinator(config):
                 process = await asyncio.create_subprocess_exec(
                     *remote_command(config), stdin=asyncio.subprocess.PIPE,
                     stdout=asyncio.subprocess.PIPE, stderr=None, limit=4*((sharing_state.MAX_MIB*1024*1024+2)//3)+8192)
-                first = await asyncio.wait_for(process.stdout.readline(), 20)
+                # Remote startup snapshots both selections before hello: up to
+                # 12 seconds each, plus SSH/session and watcher startup time.
+                first = await asyncio.wait_for(process.stdout.readline(), 40)
                 hello = parse_message(first)
                 if hello.get("kind") != "hello" or hello.get("version") != WIRE_VERSION:
                     raise RuntimeError("remote handshake failed")

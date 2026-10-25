@@ -12,12 +12,12 @@ The companion shares the regular clipboard and the primary selection (highlight 
 - [Validation and limits](docs/VALIDATION.md), including [the original two-computer acceptance](docs/ACCEPTANCE.md).
 - [Plugin and pairing wizard](docs/PLUGIN.md): Direct LAN (SSH), Tailscale (SSH), status, persistent pause and pair-wide size controls.
 - [Plugin architecture](docs/PLUGIN-DESIGN.md): runtime, pairing and lifecycle contracts.
-- [Experimental 0.2.0 changes](CHANGELOG.md).
+- [Experimental 0.2.1 changes](CHANGELOG.md).
 - [Credits](docs/CREDITS.md) and [contributing](CONTRIBUTING.md).
 
 ## Status
 
-**Experimental 0.2.0.** The accepted setup used Synergy 3.8.4, Omarchy 4.0.6 and Hyprland 0.56.2, with two receiving 1920×1080 monitors at scale 1. Input, middle-click sharing, clipboard pause/reconnect and the stuck-Shift correction passed owner acceptance. See the validation notes for which transport/revision has been tested and the limits of that result.
+**Experimental 0.2.1 pre-release.** The accepted setup used Synergy 3.8.4, Omarchy 4.0.6 and Hyprland 0.56.2, with two receiving 1920×1080 monitors at scale 1. Input, middle-click sharing, clipboard pause/reconnect and the stuck-Shift correction passed owner acceptance. See the validation notes for which transport/revision has been tested and the limits of that result.
 
 The Python companion and example configuration are at the repository root. Run its isolated checks there:
 
@@ -32,5 +32,7 @@ The input bridge comes from the existing wayland-kdeconnect-fix project; its pat
 ## Clipboard scope
 
 Supports one UTF-8 text or PNG/JPEG/WebP/BMP representation per change, with a default 8 MiB limit. The plugin supports a pair-wide limit from 1–128 MiB, synchronized from either endpoint. It does not synchronize rich text, file lists, drag-and-drop, clipboard history or selection clearing. Password-manager copies marked as secret stay local unless you choose **Send one secret** for a single copy. Both computers must be trusted: other supported copied contents are shared while enabled. The Synergy gate does not track pointer focus or lock-screen state and is not a security boundary.
+
+The password-manager guard recognizes only the documented markers and origins. Version 0.2.1 binds metadata and content to one Wayland offer and discards a capture if that offer changes, fixing a timing gap found in tagged 0.2.0. See [review findings and limitations](docs/VALIDATION.md#020-review-findings). Pause sharing before copying sensitive information when withholding must be assured.
 
 The clipboard code and documentation use the [MIT license](LICENSE). The bridge patches retain their own [upstream MIT notice](patches/input-bridge/UPSTREAM-LICENSE).

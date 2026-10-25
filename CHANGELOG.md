@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.1 — experimental — 24 October 2026
+
+- Fix a clipboard capture race in the 0.2.0 password-manager guard. MIME types, browser-source metadata and payload now come from one Wayland data offer. Selection replacement aborts the capture instead of mixing ordinary metadata with a later secret. This applies to regular clipboard, PRIMARY and initial synchronization.
+- Refuse received secrets when `wl-copy --sensitive` is unavailable, instead of writing them without the marker.
+- Give large clipboard reads a total budget of 8 seconds once a payload passes 32 MiB, 12 seconds past 64 MiB (4 seconds otherwise), measured from capture start. Allow 40 seconds for the receiver handshake to cover its two initial captures plus connection/startup overhead.
+- Treat an `OSError` from the initial snapshot as an unavailable selection, so that snapshot failure alone does not abort watcher startup. Report a missing runtime-directory variable in the reader as a connection error. An unavailable Wayland session or failed watcher can still stop the companion; this is not a session-recovery guarantee.
+- Add a bounded, read-only Python data-control reader, installed by both the manual installer and plugin. Requires data-control protocol v2 and exactly one Wayland seat; no additional package or build step. Install matching updated runtimes on both computers.
+- Add private-compositor regression tests for offer replacement, source association, byte limits, timeout, unsupported selections and marker support. Guide edits preserve existing fcitx5/Synergy policy settings, qualify policy licensing and explain receiver-first upgrades.
+- Add GitHub Actions checks for Python 3.11/3.14, the pinned official Omarchy plugin validator, and the patched input-bridge build with CTest. These isolated checks do not replace paired desktop acceptance.
+- Fix Python 3.11 subprocess cleanup after an oversized capture: discard buffered output after killing the helper so waiting for exit cannot hang on its paused output pipe. Test subprocesses now use the selected Python interpreter.
+
+The existing `v0.2.0` tag is unchanged and its release remains unpublished. Use `v0.2.1` for the fixes above.
+
 ## 0.2.0 — experimental
 
 - Password-manager copies marked with `x-kde-passwordManagerHint` stay on the computer where they were copied. **Send one secret** in the panel (or the `allowSecret` IPC call) shares exactly one regular-clipboard secret within 60 seconds, including one copied just before. Highlighted secrets and automatic initial sync never carry secrets. Received secrets are re-marked with `wl-copy --sensitive`. Copies from the Proton Pass, Bitwarden and 1Password Chromium extensions, and the Proton Pass desktop/web origin, count as secrets even without the marker.
