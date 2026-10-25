@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — 0.2.1 candidate
+## 0.2.1 — experimental — 24 October 2026
 
 - Fix a clipboard capture race in the 0.2.0 password-manager guard. MIME types, browser-source metadata and payload now come from one Wayland data offer. Selection replacement aborts the capture instead of mixing ordinary metadata with a later secret. This applies to regular clipboard, PRIMARY and initial synchronization.
 - Refuse received secrets when `wl-copy --sensitive` is unavailable, instead of writing them without the marker.
@@ -11,7 +11,7 @@
 - Add GitHub Actions checks for Python 3.11/3.14, the pinned official Omarchy plugin validator, and the patched input-bridge build with CTest. These isolated checks do not replace paired desktop acceptance.
 - Fix Python 3.11 subprocess cleanup after an oversized capture: discard buffered output after killing the helper so waiting for exit cannot hang on its paused output pipe. Test subprocesses now use the selected Python interpreter.
 
-The existing `v0.2.0` tag is unchanged. Its release remains unpublished while the replacement candidate is reviewed.
+The existing `v0.2.0` tag is unchanged and its release remains unpublished. Use `v0.2.1` for the fixes above.
 
 ## 0.2.0 — experimental
 

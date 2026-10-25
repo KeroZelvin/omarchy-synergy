@@ -1,5 +1,7 @@
 # Validation and limits
 
+Version 0.2.1 is an experimental pre-release. Entries below preserve the validation history; statements about a release hold or an unmerged PR describe those earlier checkpoints. The historical transient failures and untested scenarios remain limitations of this release.
+
 ## CI-integrated runtime deployed and paired acceptance — 24 October 2026
 
 Both computers were upgraded receiver-first from `9ca1631` to PR #1 runtime commit `c0c007c`, including the Python 3.11 subprocess cleanup fix. Their clean installed plugin checkouts and runtime bundles match: `47e7f4d82be4a8db0f971a89cfa330109a3155c05790d2a68a4e2bf70c55f2af`. Fresh private backups preserve the previous files, modes, missing destinations, plugin history and origin; disposable restore checks pass. Existing connection settings, roles, initial-sync policy, pause state and 128 MiB limit are preserved. Reinstallation renewed the limit-negotiation ID, which both endpoints acknowledge.
